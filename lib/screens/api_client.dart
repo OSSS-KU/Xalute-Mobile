@@ -28,6 +28,7 @@ class ApiClient {
     });
   }
 
+
   Future<http.Response> _executeRequest(String path, String method, {dynamic body}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception("Not logged in");

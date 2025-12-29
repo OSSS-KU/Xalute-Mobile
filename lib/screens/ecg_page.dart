@@ -74,6 +74,8 @@ class _EcgPageState extends State<EcgPage> {
         final ecgService = Provider.of<EcgDataService>(context, listen: false);
         final name = ecgService.userName ?? "User";
         final birthDate = ecgService.birthDate ?? "";
+        final phoneNumber = ecgService.phoneNumber ?? "";
+        final address = ecgService.address ?? "";
 
         showDialog(
           context: context,

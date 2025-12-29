@@ -44,6 +44,9 @@ class EcgDataService extends ChangeNotifier {
   String get userName => _userName;
   String? get profileImagePath => _profileImagePath;
   bool get isLoading => _isLoading;
+  String? get phoneNumber => _phoneNumber;
+  String? get address => _address;
+
 
   void setUserName(String name) {
     _userName = name.isEmpty ? "User" : name;

@@ -173,7 +173,9 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
       return const Center(child: Text('해당 리드에 대한 데이터가 없습니다.', style: TextStyle(fontSize: 14)));
     }
 
-    final adjustedSpots = spots;
+    final adjustedSpots = isFirstSignal
+        ? spots.where((e) => e.x >= 5.0).toList()
+        : spots;
 
     final xMax = adjustedSpots.last.x;
     final yMin = adjustedSpots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
@@ -250,6 +252,9 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                     if (rPeaks.length <= i * 2 + 1 || rPeaks[i * 2 + 1] >= spots.length) return null;
                     final x1 = spots[rPeaks[i * 2]].x;
                     final x2 = spots[rPeaks[i * 2 + 1]].x;
+
+                    if (x2 < 5.0) return null;
+
                     return VerticalRangeAnnotation(
                       x1: x1,
                       x2: x2,
@@ -288,8 +293,8 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                   if (isFirstSignal)
                     LineChartBarData(
                       spots: rPeaks
-                          .where((x) => x < spots.length)
-                          .map((x) => FlSpot(spots[x].x, spots[x].y))
+                          .where((idx) => idx < spots.length && spots[idx].x >= 5.0)
+                          .map((idx) => FlSpot(spots[idx].x, spots[idx].y))
                           .toList(),
                       isCurved: false,
                       color: Colors.transparent,

@@ -173,9 +173,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
       return const Center(child: Text('해당 리드에 대한 데이터가 없습니다.', style: TextStyle(fontSize: 14)));
     }
 
-    final adjustedSpots = isFirstSignal
-        ? spots.where((e) => e.x >= 5.0).toList()
-        : spots;
+    final adjustedSpots = spots;
 
     final xMax = adjustedSpots.last.x;
     final yMin = adjustedSpots.map((e) => e.y).reduce((a, b) => a < b ? a : b);

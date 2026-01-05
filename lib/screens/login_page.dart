@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -22,11 +24,18 @@ class _LoginPageState extends State<LoginPage> {
       _isLoading = true;
     });
 
+    final prefs = await SharedPreferences.getInstance();
+    bool isSurveyCompleted = prefs.getBool('isSurveyCompleted') ?? false;
+
     try {
       final String? idToken = await signInAndGetIdToken();
 
       if (idToken != null) {
-        Navigator.pushReplacementNamed(context, '/ecg');
+        if(isSurveyCompleted) {
+          Navigator.pushReplacementNamed(context, '/ecg');
+        } else{
+          Navigator.pushReplacementNamed(context, '/survey');
+        }
       } else {
         debugPrint("Error: Firebase ID Token 획득 실패.");
       }
@@ -44,9 +53,8 @@ class _LoginPageState extends State<LoginPage> {
 
 
   Future<String?> signInAndGetIdToken() async {
-    await dotenv.load(fileName: "assets/env/.env");
 
-    String? webClientId = dotenv.env['GOOGLE_FIREBASE_KEY'] ?? '';
+    String? webClientId = '393654640908-tuhebsgvtf7j8vkouqjjvrunjn0rn8nb.apps.googleusercontent.com';
     final GoogleSignInAccount? googleUser = await GoogleSignIn(
       serverClientId: webClientId,
     ).signIn();

@@ -208,6 +208,7 @@ class HealthApp extends StatelessWidget {
         '/ecg': (context) => const EcgPage(),
         '/login': (context) => const LoginPage(),
         '/settings': (context) => const SettingPage(),
+        '/survey' : (context) => const SurveyPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/ecgDetail') {
@@ -240,42 +241,48 @@ class HealthApp extends StatelessWidget {
 }
 
 
-
 class _AuthCheckScreen extends StatelessWidget {
-
-
-  Future<bool> hasSession() async {
+  // 세션과 설문 상태를 동시에 체크하는 함수
+  Future<Map<String, dynamic>> _checkAllStatus() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return false;
+    final prefs = await SharedPreferences.getInstance();
 
-    // 서버 호출 전 최신 토큰 가져오기
-    try {
-      final idToken = await user.getIdToken();
-      // 서버에 idToken 보내서 JWT 발급 여부 확인 가능
-      // await apiClient.checkToken(idToken);
-      return true;
-    } catch (e) {
-      return false;
-    }
+    // 1. 로그인 여부 (기존 hasSession 로직)
+    bool hasSession = user != null;
+
+    // 2. 설문 완료 여부 (SharedPref에서 가져옴, 없으면 false)
+    bool isSurveyCompleted = prefs.getBool('isSurveyCompleted') ?? false;
+
+    return {
+      'hasSession': hasSession,
+      'isS urveyCompleted': isSurveyCompleted,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: hasSession(),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _checkAllStatus(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // 로딩 중
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        };
-        final api = ApiClient();
+        }
 
-        final hasSession = snapshot.data ?? false;
+        final bool hasSession = snapshot.data?['hasSession'] ?? false;
+        final bool isSurveyCompleted = snapshot.data?['isSurveyCompleted'] ?? false;
 
-        //return hasSession ? const EcgPage() : const LoginPage();
+        // [체크 1] 로그인 안 됨 -> 로그인 페이지
+        if (!hasSession) {
+          return const LoginPage();
+        }
 
-        //return EcgPage();
-        return EcgPage();
+        // [체크 2] 로그인은 됐는데 설문은 안 함 -> 설문 페이지
+        if (!isSurveyCompleted) {
+          return SurveyPage();
+        }
+
+        // [체크 3] 둘 다 완료 -> 메인 페이지
+        return const EcgPage();
       },
     );
   }

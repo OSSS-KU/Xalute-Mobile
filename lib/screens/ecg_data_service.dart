@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class EcgEntry {
   final DateTime dateTime;
@@ -23,6 +24,22 @@ class EcgEntry {
   });
 }
 
+Future<String> _getIdToken() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    throw Exception("Not logged in");
+  }
+
+  final token = await user.getIdToken();
+  if (token == null) {
+    throw Exception("Failed to get ID token");
+  }
+
+  return token;
+}
+
+
+
 class EcgDataService extends ChangeNotifier {
   static const _channel = MethodChannel('com.example.health/ecg');
 
@@ -31,6 +48,12 @@ class EcgDataService extends ChangeNotifier {
   }
 
   final List<EcgEntry> _entries = [];
+
+  bool isSurveyCompleted = false; // 설문 완료 여부
+  void completeSurvey() {
+    isSurveyCompleted = true;
+    notifyListeners(); // 상태가 변했음을 앱 전체에 알림
+  }
 
   String _userName = 'User';
   String? _profileImagePath;

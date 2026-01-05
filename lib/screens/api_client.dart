@@ -44,11 +44,11 @@ class ApiClient {
 
     switch (method) {
       case 'POST':
-        return await _client.post(uri, headers: headers, body: jsonEncode(body));
+        return await _client.post(uri, headers: headers, body: body);
       case 'GET':
         return await _client.get(uri, headers: headers);
       case 'PUT':
-        return await _client.put(uri, headers: headers, body: jsonEncode(body));
+        return await _client.put(uri, headers: headers, body: body);
       case 'DELETE':
         return await _client.delete(uri, headers: headers);
       default:

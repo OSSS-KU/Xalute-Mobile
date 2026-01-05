@@ -11,6 +11,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:xalute/screens/api_client.dart';
 import 'package:kpostal/kpostal.dart';
+import 'dart:convert';
+import 'package:xalute/screens/api_client.dart';
+
+final api = ApiClient();
+
 
 class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
@@ -47,6 +52,7 @@ class PhoneNumberFormatter extends TextInputFormatter {
     );
   }
 }
+
 
 
 //name, birthDate, phone, address
@@ -334,6 +340,7 @@ class _SettingPageState extends State<SettingPage> {
               ),
               onChanged: (_) => setState(() => _hasChanges = true),
             ),
+            const SizedBox(height: 20),
             const Align(
               alignment: Alignment.centerLeft,
               child: Text("전화번호", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),

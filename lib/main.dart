@@ -255,7 +255,7 @@ class _AuthCheckScreen extends StatelessWidget {
 
     return {
       'hasSession': hasSession,
-      'isS urveyCompleted': isSurveyCompleted,
+      'is SurveyCompleted': isSurveyCompleted,
     };
   }
 
@@ -270,6 +270,7 @@ class _AuthCheckScreen extends StatelessWidget {
 
         final bool hasSession = snapshot.data?['hasSession'] ?? false;
         final bool isSurveyCompleted = snapshot.data?['isSurveyCompleted'] ?? false;
+
 
         // [체크 1] 로그인 안 됨 -> 로그인 페이지
         if (!hasSession) {

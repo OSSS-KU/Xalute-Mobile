@@ -54,12 +54,14 @@ public class MainActivity extends FlutterActivity implements DataClient.OnDataCh
                 }
 
                 try {
+                    String token = call.argument("token");
                     String name = call.argument("name");
                     String birthDate = call.argument("birthDate");
                     String phoneNumber = call.argument("phoneNumber");
                     String address = call.argument("address");
 
                     JSONObject json = new JSONObject();
+                    json.put("token", token);
                     json.put("name", name != null ? name : "");
                     json.put("birthDate", birthDate != null ? birthDate : "");
                     json.put("phone", phoneNumber != null ? phoneNumber : "");

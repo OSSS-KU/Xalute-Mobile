@@ -54,6 +54,7 @@ flutter:
   assets:
   - assets/icon/xalute.png
   - assets/icon/profile.png
+  - assets/icon/img.png
   fonts:
     - family: SeoulNam
       fonts:

@@ -48,6 +48,15 @@ class DiseaseHistory {
 }
 
 class SurveyState {
+  int height = 0;
+  int weight = 0;
+
+  int smoking = -1;
+  int drinking = -1;
+  int activity = -1;
+
+
+  /*
   String gender = "M";
 
   bool hasHealthCheck = false;
@@ -187,8 +196,6 @@ class SurveyState {
     return base;
 
   }
-
-
 
   Map<String, dynamic> _activityToJson(List<double> v) {
     return {
@@ -383,6 +390,8 @@ class SurveyState {
       },
     };
   }
+
+   */
 }
 
 
@@ -394,7 +403,9 @@ class _SurveyPageState extends State<SurveyPage> {
 
   List<int> stack = [];
 
-  final int totalSteps = 31;
+  final int totalSteps = 4;
+
+/*
   // 서버 전송 로직
   void _nextStep() {
     setState(() {
@@ -428,6 +439,72 @@ class _SurveyPageState extends State<SurveyPage> {
     });
   }
 
+ */
+  void showMessage(BuildContext context, String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 2), // 2초 동안 표시
+        behavior: SnackBarBehavior.floating, // 화면에서 살짝 떠 있는 스타일
+      ),
+    );
+  }
+
+  void _nextStep() {
+    setState(() {
+      if (currentStep == 0){
+        if(state.smoking == -1)
+          {
+            showMessage(context, "문항을 선택해주세요");
+            return null;
+          }
+        else
+          {
+            stack.add(currentStep);
+            currentStep++;
+          }
+      } else if (currentStep == 1){
+        if(state.drinking == -1)
+        {
+          showMessage(context, "문항을 선택해주세요");
+          return null;
+        }
+        else
+        {
+          stack.add(currentStep);
+          currentStep++;
+        }
+      } else if (currentStep == 2){
+        if(state.height == 0 || state.weight == 0)
+        {
+          showMessage(context, "값을 입력해주세요");
+          return null;
+        }
+        else
+        {
+          stack.add(currentStep);
+          currentStep++;
+        }
+      } else if (currentStep == 3){
+        if(state.activity == -1)
+        {
+          showMessage(context, "문항을 선택해주세요");
+          return null;
+        }
+        else
+        {
+          stack.add(currentStep);
+          currentStep++;
+        }
+      } else if (currentStep < totalSteps - 1) {
+          stack.add(currentStep);
+          currentStep++;
+        } else {
+        _printData();
+      }
+      print(stack);
+    });
+  }
   void _prevStep() {
     if (currentStep > 0 ) {
       currentStep = stack.removeLast();
@@ -435,6 +512,7 @@ class _SurveyPageState extends State<SurveyPage> {
     }
   }
 
+  /*
 // --- 서버 제출 로직 ---
   Future<void> _submitData() async {
     showDialog(
@@ -463,8 +541,7 @@ class _SurveyPageState extends State<SurveyPage> {
       if (Navigator.canPop(context)) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("실패: $e")));
     }
-  }
-
+  */
   Future<void> _printData() async {
     // 1. 로딩 인디케이터 표시
     showDialog(
@@ -479,10 +556,6 @@ class _SurveyPageState extends State<SurveyPage> {
 
     try {
       // 2. state 데이터 콘솔 출력
-      debugPrint("--- Survey Data JSON ---");
-      debugPrint(jsonEncode(state.toJson()));
-      debugPrint("------------------------");
-
       // 3. (옵션) 서버 전송 로직이 필요하다면 여기에 추가 가능
       // await ApiClient().submitSurvey(state.toJson());
 
@@ -506,7 +579,6 @@ class _SurveyPageState extends State<SurveyPage> {
         ),
       );
 
-      print(state.toJson());
 
       // 3. 2초 대기
       await Future.delayed(const Duration(seconds: 2));
@@ -604,6 +676,150 @@ class _SurveyPageState extends State<SurveyPage> {
 // --- 질문 단계별 분기 ---
   Widget _buildCurrentQuestion() {
     switch (currentStep) {
+      case -1:
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(
+                textAlign: TextAlign.justify,
+                textWidthBasis: TextWidthBasis.longestLine,
+                text: TextSpan(
+                  style: const TextStyle(
+                    fontSize: 18,
+                    height: 1.6,
+                    color: Colors.black,
+                    fontFamily: 'SeoulNam',
+                    fontWeight: FontWeight.w600, // 더 두껍게 설정
+                  ),
+                  children: [
+                    TextSpan(
+                      text: 'xalute',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        color: Color(0xFFFB755B),
+                        fontWeight: FontWeight.w700, // 강조어는 가장 두껍게
+                      ),
+                    ),
+                    const TextSpan(
+                      text: ' 앱을 처음 사용하시나요?\n저희 앱은 만성질환 예방 및 관리를 위해 검진과 상담을 제공하고 있습니다.\n\n'
+                          '본 설문지는 건강관리 서비스를 제공해 드리기 위한 기초자료로 향후 상담에 소중한 자료가 될 것입니다. '
+                          '다음 문항들에 대하여 해당하는 부분에 대해 설문을 참여해 주세요.',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      case 0:
+        return _buildDynamicQuestion<int>(
+          question: "1. 다음 중 본인의 흡연량에 해당하는 문항을 골라주세요",
+          groupValue: state.smoking,
+          options: [
+            {"title": "피워본 적 없다", "value": 25},
+            {"title": "금연 1년 이상", "value": 15},
+            {"title": "금연 1년 미만", "value": 5},
+            {"title": "현재 흡연", "value": 0},
+          ],
+          onChanged: (val) => setState(() => state.smoking = val!),
+        );
+      case 1:
+        return _buildDynamicQuestion<int>(
+          question: "2. 다음 중 본인의 음주 빈도에 해당하는 문항을 골라주세요",
+          groupValue: state.drinking,
+          options: [
+            {"title": "전혀 마시지 않음 또는 월 1회 미만", "value": 25},
+            {"title": "저위험 음주 (주 1~2회, 1회 1~4잔)", "value": 15},
+            {"title": "중위험 음주 (주 1~2회, 1회 5~9잔)", "value": 10},
+            {"title": "고위험 음주 (주 3회 이상)", "value": 5},
+          ],
+          onChanged: (val) => setState(() => state.drinking = val!),
+        );
+      case 2:
+        return _buildHeightWeightQuestion(
+          question: "3. 키와 몸무게를 입력해주세요",
+          // double 데이터를 String으로 변환 (0일 경우 빈 문자열 표시)
+          heightValue: state.height == 0 ? "" : state.height.toInt().toString(),
+          weightValue: state.weight == 0 ? "" : state.weight.toInt().toString(),
+          // String 입력을 double로 변환하여 저장
+          onHeightChanged: (v) => setState(() => state.height = int.tryParse(v) ?? 0),
+          onWeightChanged: (v) => setState(() => state.weight = int.tryParse(v) ?? 0),
+        );
+      case 3:
+        return _buildDynamicQuestion<int>(
+          question: "4. 다음 중 본인에게 해당되는 활동량을 골라주세요",
+          groupValue: state.activity,
+          options: [
+            {"title": "주 150분 이상 또는 75분의 고강도 유산소 활동 이상", "value": 25},
+            {"title": "주 75분-150분의 중강도 또는 30-75분의 고강도 유산소 활동", "value": 15},
+            {"title": "규칙적인 활동을 하나 위 조건에 미치지 못하는 경우", "value": 5},
+            {"title": "비활동", "value": 0},
+          ],
+          onChanged: (val) => setState(() => state.activity = val!),
+        );
+      case 4:
+        String smokingScore = state.smoking.toString();
+        String drinkingScore = state.drinking.toString();
+        double bmi = state.weight/((state.height/100)*(state.height/100));
+        int bScore = (bmi >= 18.5 && bmi <= 22.9) ? 25 :
+        (bmi >= 23.0 && bmi <= 24.9) ? 15 :
+        (bmi < 18.5) ? 10 :
+        (bmi >= 25.0 && bmi <= 29.9) ? 5 : 0;
+        String bmiScore = bScore.toString();
+        String activityScore = state.activity.toString();
+        String totalScore = (state.smoking + state.drinking + state.activity + bScore).toString();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+          // 메인 타이틀 (디자인 가이드 반영)
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(
+                  text: '강윤경님의\n건강점수는 ',
+                  style: TextStyle(
+                    color: Color(0xFF212121), // 기본 검정색 계열
+                  ),
+                ),
+                TextSpan(
+                  text: '$totalScore',
+                  style: const TextStyle(
+                    color: Color(0xFFFB755B), // 요청하신 포인트 색상
+                  ),
+                ),
+                const TextSpan(
+                  text: '점입니다',
+                  style: TextStyle(
+                    color: Color(0xFF212121),
+                  ),
+                ),
+              ],
+            ),
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              height: 1.33,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // 상세 점수 내역 리스트
+          _buildScoreRow("흡연 점수", "+$smokingScore점"),
+          const SizedBox(height: 36), // 가이드의 gap 24px
+          _buildScoreRow("음주 점수", "+$drinkingScore점"),
+          const SizedBox(height: 36), // 가이드의 gap 24px
+          _buildScoreRow("BMI 점수", "+$bmiScore점"),
+          const SizedBox(height: 36), // 가이드의 gap 24px
+          _buildScoreRow("신체활동 점수", "+$activityScore점"),
+          const SizedBox(height: 36), // 가이드의 gap 24px
+
+        ],
+      );
+      /*
       case -1:
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
@@ -1434,6 +1650,8 @@ class _SurveyPageState extends State<SurveyPage> {
           ],
           onChanged: (val) => setState(() => state.monthly_household_income = val!),
         );
+
+       */
       default:
         return const Center(child: Text("설문 내용을 모두 확인했습니다."));
 
@@ -1558,7 +1776,10 @@ class _SurveyPageState extends State<SurveyPage> {
         ],
       ),
     );
-  }Widget _buildDynamicInputQuestion<T>({
+  }
+
+  /*
+  Widget _buildDynamicInputQuestion<T>({
     required String question,
     required T? groupValue,
     required List<Map<String, dynamic>> options,
@@ -2498,6 +2719,90 @@ class _SurveyPageState extends State<SurveyPage> {
           Text("$total", style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFB755B), fontSize: 18)),
           const Text(" 점", style: TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'SeoulNam')),
         ],
+      ),
+    );
+  }
+
+   */
+  Widget _buildScoreRow(String label, String point) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 17,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF000000),
+          ),
+        ),
+        Text(
+          point,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 17,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF1C0D0D),
+          ),
+        ),
+      ],
+    );
+  }
+  Widget _buildHeightWeightQuestion({
+    required String question,
+    required String heightValue,
+    required String weightValue,
+    required ValueChanged<String> onHeightChanged,
+    required ValueChanged<String> onWeightChanged,
+  }) {
+    return _questionWrapper(
+      title: question,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center, // 가운데 정렬
+        children: [
+          const Text("키 : ", style: TextStyle(fontSize: 15)),
+          _buildUnderlineInput(width: 60, value: heightValue, onChanged: onHeightChanged),
+          const Text("      몸무게 : ", style: TextStyle(fontSize: 15)),
+          _buildUnderlineInput(width: 60, value: weightValue, onChanged: onWeightChanged),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnderlineInput({
+    required double width,
+    required String value,
+    required ValueChanged<String> onChanged
+  }) {
+    return SizedBox(
+      width: width,
+      child: TextField(
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        // controller를 통해 현재 String 값을 유지하고 커서 위치를 마지막으로 보냅니다.
+        controller: TextEditingController.fromValue(
+          TextEditingValue(
+            text: value,
+            selection: TextSelection.collapsed(offset: value.length),
+          ),
+        ),
+        style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFFB755B)
+        ),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(vertical: 4),
+          enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFFFB755B))
+          ),
+          focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFFFB755B), width: 2)
+          ),
+        ),
+        onChanged: onChanged,
       ),
     );
   }

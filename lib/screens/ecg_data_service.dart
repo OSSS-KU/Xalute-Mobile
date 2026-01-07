@@ -54,6 +54,7 @@ class EcgDataService extends ChangeNotifier {
     isSurveyCompleted = true;
     notifyListeners(); // 상태가 변했음을 앱 전체에 알림
   }
+  final userToken = _getIdToken();
 
   String _userName = 'User';
   String? _profileImagePath;

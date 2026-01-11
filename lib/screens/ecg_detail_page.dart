@@ -49,76 +49,84 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
   }
 
   Future<void> _loadData() async {
+    // 헬퍼 함수: JSON 내의 NaN, Infinity를 null로 치환
+    String sanitizeJson(String jsonString) {
+      return jsonString
+          .replaceAll(RegExp(r'\bNaN\b'), 'null')
+          .replaceAll(RegExp(r'\bInfinity\b'), 'null')
+          .replaceAll(RegExp(r'-Infinity\b'), 'null');
+    }
+
     try {
       final txtFile = File(widget.txtPath);
-      if (!txtFile.existsSync()) {
-        debugPrint('❌ TXT 파일이 존재하지 않음');
-      } else {
-        // Signal 1: txt에서 읽기
+      if (txtFile.existsSync()) {
+        // 1. TXT 파일 처리 (기존 로직 동일)
         final txtContent = await txtFile.readAsString();
         final rawRecords = txtContent.trim().split(') (');
-
         List<FlSpot> txtSpots = [];
         for (final record in rawRecords) {
           final clean = record.replaceAll('(', '').replaceAll(')', '');
           final parts = clean.split(',');
           if (parts.length == 2) {
             final y = double.tryParse(parts[0].trim());
-            final x = double.tryParse(parts[1].trim()); // 이미 초 단위임
-            if (x != null && y != null) {
-              txtSpots.add(FlSpot(x, y));
-            }
+            final x = double.tryParse(parts[1].trim());
+            if (x != null && y != null) txtSpots.add(FlSpot(x, y));
           }
         }
-
         txtSpots.sort((a, b) => a.x.compareTo(b.x));
+        final baseX = txtSpots.isNotEmpty ? txtSpots.first.x : 0;
+        leadData[0] = txtSpots.map((s) => FlSpot(s.x - baseX, s.y)).toList();
 
-        final baseX = txtSpots.first.x;
-        final convertedSpots = txtSpots.map((spot) {
-          return FlSpot(spot.x - baseX, spot.y); // 0초부터 시작
-        }).toList();
-
-        leadData[0] = convertedSpots;
-
-        final request = http.MultipartRequest(
-          'POST',
-          Uri.parse('http://34.69.44.173:7000/predict12lead'),
-        );
+        // 2. 서버 통신 및 결과 파싱
+        final request = http.MultipartRequest('POST', Uri.parse('http://34.69.44.173:7001/predict12lead/500'));
         request.files.add(await http.MultipartFile.fromPath('file', txtFile.path));
         final streamedResponse = await request.send();
         final response = await http.Response.fromStream(streamedResponse);
 
         if (response.statusCode == 200) {
-          final jsonData = jsonDecode(response.body);
+          // ✅ [중요] 서버 응답에서도 NaN 제거 처리
+          final cleanedResponseBody = sanitizeJson(response.body);
+          final jsonData = jsonDecode(cleanedResponseBody);
+
           final resultArray = jsonData['result'];
-          final leads = resultArray[0][0].sublist(3, 14); // signal 2~12
-          for (int i = 0; i < 11; i++) {
-            leadData[i + 1] = List.generate(
-              leads[i].length,
-                  (j) => FlSpot(j * (10.0 / 512.0), leads[i][j].toDouble()), // ✅ 10초 분포
-            );
+          if (resultArray != null && resultArray.isNotEmpty) {
+            final leads = resultArray[0][0].sublist(3, 14);
+            for (int i = 0; i < 11; i++) {
+              leadData[i + 1] = List.generate(
+                leads[i].length,
+                    (j) => FlSpot(j * (10.0 / 512.0), leads[i][j].toDouble()),
+              );
+            }
           }
-        } else {
-          debugPrint('❌ 서버 오류: ${response.reasonPhrase}');
         }
       }
 
-      // JSON에서 r_peaks, distances 불러오기
+      // 3. 로컬 JSON 파일 처리 (r_peaks, distances)
       if (widget.jsonPath.isNotEmpty && File(widget.jsonPath).existsSync()) {
         final jsonStr = await File(widget.jsonPath).readAsString();
-        final jsonData = jsonDecode(jsonStr);
-        if (jsonData['result'] is Map<String, dynamic>) {
-          distances = List<double>.from(jsonData['result']['distance_from_median'] ?? []);
-          rPeaks = List<int>.from(jsonData['result']['r_peaks'] ?? []);
+
+        // ✅ [중요] 파일 읽기에서도 NaN 제거 처리
+        final cleanedJsonStr = sanitizeJson(jsonStr);
+        final jsonData = jsonDecode(cleanedJsonStr);
+
+        // 로그상의 구조가 {"qt_st": ...} 이므로, root나 'result' 키 내부를 모두 체크
+        var targetData = jsonData['result'] ?? jsonData;
+
+        if (targetData is Map<String, dynamic>) {
+          distances = List<double>.from(targetData['distance_from_median'] ?? [])
+              .map((e) => (e as num).toDouble())
+              .toList();
+          rPeaks = List<int>.from(targetData['r_peaks'] ?? [])
+              .map((e) => e as int)
+              .toList();
         }
       }
     } catch (e) {
-      debugPrint('❌ 오류: $e');
+      debugPrint('❌ 최종 오류 처리: $e');
     }
 
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
-
   Widget _buildLeadButtons() {
     final leadLabels = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'];
 

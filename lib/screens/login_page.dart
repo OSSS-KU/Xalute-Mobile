@@ -1,10 +1,14 @@
+
 import 'dart:io' show Platform;
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'ecg_data_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -71,6 +75,19 @@ class _LoginPageState extends State<LoginPage> {
     final String? idToken = googleAuth.idToken;
 
 
+    String firebaseName = '';
+    String firebaseEmail = '';
+    if (user != null) {
+      for (final providerProfile in user.providerData) {
+        if (providerProfile.providerId == 'google.com') {
+          firebaseName = providerProfile.displayName ?? '';
+          firebaseEmail = providerProfile.email ?? '';
+        }
+      }
+    }
+
+    onLoginComplete(firebaseName);
+
     if (user != null) {
       for (final providerProfile in user.providerData) {
         // ID of the provider (google.com, apple.com, etc.)
@@ -86,6 +103,7 @@ class _LoginPageState extends State<LoginPage> {
     }
     return null;
   }
+
   Future<String?> signInWithApple() async {
     final appleCredential = await SignInWithApple.getAppleIDCredential(
       scopes: [
@@ -110,6 +128,14 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     return null;
+  }
+
+  void onLoginComplete(String name) {
+    final ecgService = Provider.of<EcgDataService>(context, listen: false);
+
+    ecgService.setUserName(
+      name
+    );
   }
 
   @override
@@ -153,10 +179,9 @@ class _LoginPageState extends State<LoginPage> {
                     onPressed: _handleGoogleLogin,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Image(
-                          image: NetworkImage(
-                              'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/512px-Google_%22G%22_logo.svg.png'),
+                      children: [
+                        Image.asset(
+                          'assets/icon/google_logo.png',
                           height: 24.0,
                           width: 24.0,
                         ),

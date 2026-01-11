@@ -2,12 +2,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'ecg_data_service.dart';
 import '../main.dart';
 import 'package:lottie/lottie.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class EcgPage extends StatefulWidget {
   const EcgPage({super.key});
@@ -25,13 +27,11 @@ class _EcgPageState extends State<EcgPage> {
   void initState() {
     super.initState();
     selectedDay = DateTime.now();
-    final ecgService = Provider.of<EcgDataService>(context, listen: false);
-    preloadSavedEcgFiles(ecgService);
-    ecgService.addListener(() {
-      if (mounted) setState(() {});
-    });
-    Future.delayed(Duration.zero, () {
-      if (mounted) setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ecgService = Provider.of<EcgDataService>(context, listen: false);
+      // 이미 서비스 생성자에서 loadInitialData를 호출하지만,
+      // 확실히 하기 위해 필요한 경우 여기서 다시 호출하거나 관련 파일을 미리 읽습니다.
+      preloadSavedEcgFiles(ecgService);
     });
   }
 
@@ -48,6 +48,24 @@ class _EcgPageState extends State<EcgPage> {
     if (result == true && mounted) {
       setState(() {});
     }
+  }
+
+  Future<String> _getIdToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("Not logged in");
+    }
+
+    final token = await user.getIdToken();
+    if (token == null) {
+      throw Exception("Failed to get ID token");
+    }
+
+    return token;
+  }
+
+  Future<SharedPreferences> getPrefs() async {
+    return await SharedPreferences.getInstance();
   }
 
   void _handleMeasureButton() async {
@@ -76,6 +94,7 @@ class _EcgPageState extends State<EcgPage> {
         final birthDate = ecgService.birthDate ?? "";
         final phoneNumber = ecgService.phoneNumber ?? "";
         final address = ecgService.address ?? "";
+        final token = await _getIdToken();
 
         showDialog(
           context: context,
@@ -90,13 +109,19 @@ class _EcgPageState extends State<EcgPage> {
                         await platform.invokeMethod('launchWatchApp', {
                           'name': name,
                           'birthDate': birthDate,
+                          'token': token,
                         });
                         ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text("워치 앱 실행됨")));
                       } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("워치 앱 실행 실패")));
-                      }
+          // 콘솔에 상세 에러 로그 출력
+          debugPrint("에러 발생 상세 내용: $e");
+          if (context.mounted) { // context가 유효한지 확인하는 것이 권장됩니다.
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("워치 앱 실행 실패: ${e.toString()}")),
+            );
+          }
+        }
                     },
                     child: const Text("확인"),
                   ),
@@ -143,7 +168,6 @@ class _EcgPageState extends State<EcgPage> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-
     return Scaffold(
       body: Stack(
         children: [
@@ -176,9 +200,9 @@ class _EcgPageState extends State<EcgPage> {
                               ),
                               const SizedBox(height: 4),
                               Row(
-                                children: const [
+                                children: [
                                   Text(
-                                    "건강점수는 72점",
+                                    "건강점수는 ${ecgService.totalScore}점",
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 24,
@@ -191,7 +215,7 @@ class _EcgPageState extends State<EcgPage> {
                                   Icon(Icons.chevron_right),
                                 ],
                               ),
-                              const Text("어제보다 3점 올랐어요",
+                              const Text("건강한 하루 보내세요",
                                   style: TextStyle(
                                       fontWeight: FontWeight.w400,
                                       fontSize: 13,

@@ -1,8 +1,12 @@
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'ecg_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart'; // 1. Provider 패키지 임포트
+import 'ecg_data_service.dart';          // 2. EcgDataService가 정의된 파일 경로 (파일명이 다르면 수정)
 
 class SurveyPage extends StatefulWidget {
   const SurveyPage({super.key});
@@ -55,6 +59,11 @@ class SurveyState {
   int drinking = -1;
   int activity = -1;
 
+
+  String familyDisease = "";
+  String medicines = "";
+
+  List<DiseaseHistory> diseaseHistory = [];
 
   /*
   String gender = "M";
@@ -397,13 +406,30 @@ class SurveyState {
 
 class _SurveyPageState extends State<SurveyPage> {
   // 기존 코드의 SurveyState 인스턴스를 유지
+
   final SurveyState state = SurveyState();
 
-  int currentStep = -1;
+  int currentStep = -2;
 
   List<int> stack = [];
 
   final int totalSteps = 4;
+
+  String userName = "user";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserName(); // 시작하자마자 이름 로드
+  }
+
+  Future<void> _loadUserName() async {
+    final name = await _getUserName();
+    setState(() {
+      userName = name; // 이름을 가져오면 화면 갱신
+    });
+  }
+
 
 /*
   // 서버 전송 로직
@@ -512,36 +538,30 @@ class _SurveyPageState extends State<SurveyPage> {
     }
   }
 
-  /*
-// --- 서버 제출 로직 ---
-  Future<void> _submitData() async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+
+  // 점수를 계산하고 저장하는 함수
+  Future<String> _getUserName() async {
+    // 1. BMI 계산
+    final prefs = await SharedPreferences.getInstance();
+    final userName = await prefs.getString('username')?? "user";
+    return userName;
+  }
+
+  // 설문 결과 화면 진입 시 또는 버튼 클릭 시
+  void onSurveyComplete() {
+    final ecgService = Provider.of<EcgDataService>(context, listen: false);
+
+    ecgService.completeSurvey();
+
+    ecgService.updateHealthScores(
+      smoking: state.smoking,
+      drinking: state.drinking,
+      activity: state.activity,
+      height: state.height.toDouble(),
+      weight: state.weight.toDouble(),
     );
+  }
 
-    try {
-      final response = await http.post(
-        Uri.parse('https://api.your-server.com/v1/surveys'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(state.toJson()),
-      );
-
-      if (!mounted) return;
-      Navigator.pop(context); // 로딩 닫기
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        _showSuccessDialog();
-      } else {
-        throw Exception("Error: ${response.statusCode}");
-      }
-    } catch (e) {
-      if (!mounted) return;
-      if (Navigator.canPop(context)) Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("실패: $e")));
-    }
-  */
   Future<void> _printData() async {
     // 1. 로딩 인디케이터 표시
     showDialog(
@@ -551,8 +571,8 @@ class _SurveyPageState extends State<SurveyPage> {
     );
 
     // 1. SharedPreferences에 설문 완료 상태 저장
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isSurveyCompleted', true);
+
+    onSurveyComplete();
 
     try {
       // 2. state 데이터 콘솔 출력
@@ -676,7 +696,7 @@ class _SurveyPageState extends State<SurveyPage> {
 // --- 질문 단계별 분기 ---
   Widget _buildCurrentQuestion() {
     switch (currentStep) {
-      case -1:
+      case -2:
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
           child: Column(
@@ -713,9 +733,24 @@ class _SurveyPageState extends State<SurveyPage> {
             ],
           ),
         );
+      case -1:
+        return _questionWrapper(
+          title: "1. 과거 치료받은 적이 있거나 현재 치료 중인 질환을 선택해주세요.",
+          child: Column(
+            children: [
+              _buildDiseaseList(), // 기존 질병 체크박스 리스트
+              const SizedBox(height: 16), // 리스트와 입력창 사이 간격
+              _buildOtherDiseaseInput(),
+              const SizedBox(height: 16), // 리스트와 입력창 사이 간격
+              _buildFamilyDiseaseInput(),
+              const SizedBox(height: 16), // 리스트와 입력창 사이 간격
+              _buildMedicineInput(),
+            ],
+          ),
+        );
       case 0:
         return _buildDynamicQuestion<int>(
-          question: "1. 다음 중 본인의 흡연량에 해당하는 문항을 골라주세요",
+          question: "2. 다음 중 본인의 흡연량에 해당하는 문항을 골라주세요",
           groupValue: state.smoking,
           options: [
             {"title": "피워본 적 없다", "value": 25},
@@ -727,7 +762,7 @@ class _SurveyPageState extends State<SurveyPage> {
         );
       case 1:
         return _buildDynamicQuestion<int>(
-          question: "2. 다음 중 본인의 음주 빈도에 해당하는 문항을 골라주세요",
+          question: "3. 다음 중 본인의 음주 빈도에 해당하는 문항을 골라주세요",
           groupValue: state.drinking,
           options: [
             {"title": "전혀 마시지 않음 또는 월 1회 미만", "value": 25},
@@ -739,7 +774,7 @@ class _SurveyPageState extends State<SurveyPage> {
         );
       case 2:
         return _buildHeightWeightQuestion(
-          question: "3. 키와 몸무게를 입력해주세요",
+          question: "4. 키와 몸무게를 입력해주세요",
           // double 데이터를 String으로 변환 (0일 경우 빈 문자열 표시)
           heightValue: state.height == 0 ? "" : state.height.toInt().toString(),
           weightValue: state.weight == 0 ? "" : state.weight.toInt().toString(),
@@ -749,7 +784,7 @@ class _SurveyPageState extends State<SurveyPage> {
         );
       case 3:
         return _buildDynamicQuestion<int>(
-          question: "4. 다음 중 본인에게 해당되는 활동량을 골라주세요",
+          question: "5. 다음 중 본인에게 해당되는 활동량을 골라주세요",
           groupValue: state.activity,
           options: [
             {"title": "주 150분 이상 또는 75분의 고강도 유산소 활동 이상", "value": 25},
@@ -763,12 +798,21 @@ class _SurveyPageState extends State<SurveyPage> {
         String smokingScore = state.smoking.toString();
         String drinkingScore = state.drinking.toString();
         double bmi = state.weight/((state.height/100)*(state.height/100));
-        int bScore = (bmi >= 18.5 && bmi <= 22.9) ? 25 :
-        (bmi >= 23.0 && bmi <= 24.9) ? 15 :
-        (bmi < 18.5) ? 10 :
-        (bmi >= 25.0 && bmi <= 29.9) ? 5 : 0;
+        int bScore;
+        if (bmi < 18.5) {
+          bScore = 10; // 저체중
+        } else if (bmi < 23.0) {
+          bScore = 25; // 정상 (18.5 이상 ~ 23.0 미만)
+        } else if (bmi < 25.0) {
+          bScore = 15; // 과체중 (23.0 이상 ~ 25.0 미만)
+        } else if (bmi < 30.0) {
+          bScore = 5;  // 비만 (25.0 이상 ~ 30.0 미만)
+        } else {
+          bScore = 0;  // 고도비만 (30.0 이상)
+        }
         String bmiScore = bScore.toString();
         String activityScore = state.activity.toString();
+        int tScore = (state.smoking + state.drinking + state.activity + bScore);
         String totalScore = (state.smoking + state.drinking + state.activity + bScore).toString();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -778,8 +822,8 @@ class _SurveyPageState extends State<SurveyPage> {
           Text.rich(
             TextSpan(
               children: [
-                const TextSpan(
-                  text: '강윤경님의\n건강점수는 ',
+                TextSpan(
+                  text: '${userName}님의\n건강점수는 ',
                   style: TextStyle(
                     color: Color(0xFF212121), // 기본 검정색 계열
                   ),
@@ -1894,6 +1938,7 @@ class _SurveyPageState extends State<SurveyPage> {
       ),
     );
   }
+  */
   Widget _buildDiseaseList() {
     final diseaseOptions = ["고혈압", "당뇨병", "이상지질혈증", "뇌졸중", "관상동맥질환", "만성콩팥병"];
 
@@ -2052,7 +2097,7 @@ class _SurveyPageState extends State<SurveyPage> {
             => setState(() => state.medicines = val!))
     );
   }
-
+/*
   Widget _buildMultiCheckInputQuestion({
     required String question,
     required List<String> selectedValues, // state.current_types (List<String>)

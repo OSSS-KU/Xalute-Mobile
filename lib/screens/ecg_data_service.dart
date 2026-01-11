@@ -48,29 +48,26 @@ class EcgDataService extends ChangeNotifier {
   }
 
   final List<EcgEntry> _entries = [];
-
-  bool isSurveyCompleted = false; // 설문 완료 여부
-  void completeSurvey() {
-    isSurveyCompleted = true;
-    notifyListeners(); // 상태가 변했음을 앱 전체에 알림
-  }
   final userToken = _getIdToken();
 
   String _userName = 'User';
   String? _profileImagePath;
   bool _isLoading = true;
+  bool _isSurveyCompleted = false;
   String? _birthDate;
   String? _phoneNumber;
   String? _address;
+  String _totalScore = "50";
 
   String? get birthDate => _birthDate;
   List<EcgEntry> get entries => _entries;
   String get userName => _userName;
   String? get profileImagePath => _profileImagePath;
   bool get isLoading => _isLoading;
+  bool get isSurveyCompleted => _isSurveyCompleted;
   String? get phoneNumber => _phoneNumber;
   String? get address => _address;
-
+  String get totalScore => _totalScore;
 
   void setUserName(String name) {
     _userName = name.isEmpty ? "User" : name;
@@ -118,6 +115,54 @@ class EcgDataService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> completeSurvey() async { // 1. 함수 선언부에 async 추가
+      _isSurveyCompleted = true;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isSurveyCompleted', _isSurveyCompleted);
+
+      notifyListeners();
+  }
+
+  Future<void> updateHealthScores({
+    required int smoking,
+    required int drinking,
+    required int activity,
+    required double height,
+    required double weight,
+  }) async {
+    // 1. BMI 계산 및 점수 환산
+    double bmi = weight / ((height / 100) * (height / 100));
+    int bScore;
+    if (bmi < 18.5) {
+      bScore = 10;
+    } else if (bmi < 23.0) {
+      bScore = 25;
+    } else if (bmi < 25.0) {
+      bScore = 15;
+    } else if (bmi < 30.0) {
+      bScore = 5;
+    } else {
+      bScore = 0;
+    }
+
+    // 2. 총합 계산 (int로 계산 후 String으로 변환)
+    int calculatedTotal = smoking + drinking + activity + bScore;
+    _totalScore = calculatedTotal.toString();
+
+    // 3. SharedPreferences에 한 번에 저장 (await 사용)
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('smokingScore', smoking);
+    await prefs.setInt('drinkingScore', drinking);
+    await prefs.setInt('bmiScore', bScore);
+    await prefs.setInt('activityScore', activity);
+    await prefs.setString('totalScore', _totalScore); // 서비스 변수 형식에 맞춰 String으로 저장
+
+    // 4. 리스너들에게 알림 (UI 즉시 반영)
+    notifyListeners();
+
+    print("건강 점수 업데이트 완료: $_totalScore점");
+  }
   Future<void> loadInitialData() async {
     final prefs = await SharedPreferences.getInstance();
     _userName = prefs.getString('username') ?? 'User';
@@ -125,6 +170,8 @@ class EcgDataService extends ChangeNotifier {
     _birthDate = prefs.getString('birthDate');
     _phoneNumber = prefs.getString('phoneNumber');
     _address = prefs.getString('address');
+    _totalScore = prefs.getString('totalScore') ?? "50";
+    _isSurveyCompleted = prefs.getBool('isSurveyCompleted') ?? false;
     _isLoading = false;
     notifyListeners();
   }

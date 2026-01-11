@@ -10,6 +10,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+
+
   String username = "user";
   // dumy data
   int healthScore = 72;
@@ -22,12 +24,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadUsername();
+    _loadUser();
   }
 
-  Future<void> _loadUsername() async {
+  Future<void> _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
+      healthScore = prefs.getInt('totalScore') ?? 75;
       username = prefs.getString('username') ?? "user";
     });
   }

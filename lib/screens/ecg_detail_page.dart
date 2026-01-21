@@ -34,6 +34,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
   double zoomScale = 1.0;
   final ScrollController _scrollController = ScrollController();
   final TransformationController _transformationController = TransformationController();
+  List<String> highProbabilityDiagnoses = []; // 추가
 
   @override
   void initState() {
@@ -48,68 +49,154 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    // 헬퍼 함수: JSON 내의 NaN, Infinity를 null로 치환
-    String sanitizeJson(String jsonString) {
-      return jsonString
-          .replaceAll(RegExp(r'\bNaN\b'), 'null')
-          .replaceAll(RegExp(r'\bInfinity\b'), 'null')
-          .replaceAll(RegExp(r'-Infinity\b'), 'null');
+  String sanitizeJson(String jsonString) {
+    return jsonString
+        .replaceAll(RegExp(r'\bNaN\b'), 'null')
+        .replaceAll(RegExp(r'\bInfinity\b'), 'null')
+        .replaceAll(RegExp(r'-Infinity\b'), 'null');
+  }
+
+  Future<void> _predict12Lead(File txtFile) async {
+    try {
+      final request = http.MultipartRequest('POST', Uri.parse('http://34.69.44.173:7001/predict12lead/512'));
+      request.files.add(await http.MultipartFile.fromPath('file', txtFile.path));
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final cleanedBody = sanitizeJson(response.body);
+        final jsonData = jsonDecode(cleanedBody);
+        final resultArray = jsonData['result'];
+
+        if (resultArray != null && resultArray.isNotEmpty) {
+          // 데이터 구조에 맞춰 리드 데이터 할당 (3~14 인덱스)
+          final leads = resultArray[0][0].sublist(3, 14);
+          for (int i = 0; i < 11; i++) {
+            leadData[i + 1] = List.generate(
+              leads[i].length,
+                  (j) => FlSpot(j * (10.0 / 512.0), leads[i][j].toDouble()),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('12-Lead Reconstruction Error: $e');
+    }
+  }
+
+  Future<List<String>> _postToEcgFounder(List<List<double>> rawData, int samplingRate) async {
+    List<String> highProbabilityDiagnoses = [];
+
+    try {
+      final url = Uri.parse('http://35.238.174.154:8000/ecg_founder/single_ecg');
+
+      // 디버깅: 전송 데이터 확인
+      debugPrint('=== ECG Founder Request ===');
+      debugPrint('Sampling Rate: $samplingRate');
+      debugPrint('Data Length: ${rawData.length}');
+      debugPrint('First 5 values: ${rawData.take(5).toList()}');
+
+      final body = jsonEncode({
+        'sampling_rate': samplingRate,
+        'data': rawData,
+      });
+
+      debugPrint('Body length: ${body.length} bytes');
+      debugPrint('==========================');
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode == 200) {
+        final cleanedBody = sanitizeJson(response.body);
+        final result = jsonDecode(cleanedBody);
+
+        debugPrint('=== ECG Founder Response (일부) ===');
+        if (result['ecg_founder_result'] != null && result['ecg_founder_result'] is List) {
+          final founderResults = result['ecg_founder_result'] as List;
+          debugPrint('결과 개수: ${founderResults.length}');
+          debugPrint('첫 3개 결과: ${founderResults.take(3).toList()}');
+
+          for (var item in founderResults) {
+            if (item is Map<String, dynamic>) {
+              final probability = item['probability'];
+              final diagnosis = item['diagnosis'];
+
+              if (probability != null && diagnosis != null) {
+                final prob = (probability is num) ? probability.toDouble() : double.tryParse(probability.toString());
+
+                if (prob != null && prob >= 0.7) {
+                  highProbabilityDiagnoses.add(diagnosis.toString());
+                  debugPrint('✅ 고확률 진단: $diagnosis (${prob.toStringAsFixed(2)})');
+                }
+              }
+            }
+          }
+        }
+        debugPrint('최종 고확률 진단 목록: $highProbabilityDiagnoses');
+        debugPrint('===================================');
+
+      } else {
+        debugPrint('❌ ECG Founder API Error: ${response.statusCode}');
+        debugPrint('Response body: ${response.body}');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ ECG Founder Post Error: $e');
+      debugPrint('StackTrace: $stackTrace');
     }
 
+    return highProbabilityDiagnoses;
+  }
+  Future<void> _loadData() async {
     try {
       final txtFile = File(widget.txtPath);
       if (txtFile.existsSync()) {
-        // 1. TXT 파일 처리 (기존 로직 동일)
+        // 1. TXT 파일 처리
         final txtContent = await txtFile.readAsString();
         final rawRecords = txtContent.trim().split(') (');
         List<FlSpot> txtSpots = [];
+        List<List<double>> rawData = []; // 2D 배열로 변경
+
         for (final record in rawRecords) {
           final clean = record.replaceAll('(', '').replaceAll(')', '');
           final parts = clean.split(',');
           if (parts.length == 2) {
             final y = double.tryParse(parts[0].trim());
             final x = double.tryParse(parts[1].trim());
-            if (x != null && y != null) txtSpots.add(FlSpot(x, y));
+            if (x != null && y != null) {
+              txtSpots.add(FlSpot(x, y));
+              rawData.add([y, x]); // [y값, x값(시간)] 형태로 저장
+            }
           }
         }
         txtSpots.sort((a, b) => a.x.compareTo(b.x));
         final baseX = txtSpots.isNotEmpty ? txtSpots.first.x : 0;
         leadData[0] = txtSpots.map((s) => FlSpot(s.x - baseX, s.y)).toList();
 
-        // 2. 서버 통신 및 결과 파싱
-        final request = http.MultipartRequest('POST', Uri.parse('http://34.69.44.173:7001/predict12lead/500'));
-        request.files.add(await http.MultipartFile.fromPath('file', txtFile.path));
-        final streamedResponse = await request.send();
-        final response = await http.Response.fromStream(streamedResponse);
+        // 2. 12-Lead 재구성 실행
+        await _predict12Lead(txtFile);
 
-        if (response.statusCode == 200) {
-          // ✅ [중요] 서버 응답에서도 NaN 제거 처리
-          final cleanedResponseBody = sanitizeJson(response.body);
-          final jsonData = jsonDecode(cleanedResponseBody);
+        // 3. ECG Founder 실행 및 결과 처리
+        final diagnosisList = await _postToEcgFounder(rawData, 512); // sampling_rate도 512로
 
-          final resultArray = jsonData['result'];
-          if (resultArray != null && resultArray.isNotEmpty) {
-            final leads = resultArray[0][0].sublist(3, 14);
-            for (int i = 0; i < 11; i++) {
-              leadData[i + 1] = List.generate(
-                leads[i].length,
-                    (j) => FlSpot(j * (10.0 / 512.0), leads[i][j].toDouble()),
-              );
-            }
-          }
+        // 상태 업데이트
+        if (mounted) {
+          setState(() {
+            highProbabilityDiagnoses = diagnosisList;
+          });
         }
       }
 
-      // 3. 로컬 JSON 파일 처리 (r_peaks, distances)
+      // 4. 로컬 JSON 파일 처리 (r_peaks, distances)
       if (widget.jsonPath.isNotEmpty && File(widget.jsonPath).existsSync()) {
         final jsonStr = await File(widget.jsonPath).readAsString();
-
-        // ✅ [중요] 파일 읽기에서도 NaN 제거 처리
         final cleanedJsonStr = sanitizeJson(jsonStr);
         final jsonData = jsonDecode(cleanedJsonStr);
 
-        // 로그상의 구조가 {"qt_st": ...} 이므로, root나 'result' 키 내부를 모두 체크
         var targetData = jsonData['result'] ?? jsonData;
 
         if (targetData is Map<String, dynamic>) {
@@ -127,6 +214,8 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
 
     if (mounted) setState(() => isLoading = false);
   }
+
+
 
   Widget _buildLeadButtons() {
     final leadLabels = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'];
@@ -366,10 +455,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
         child: Padding(
-          //padding: const EdgeInsets.all(10),
-          //padding: const EdgeInsets.symmetric(vertical: 10),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -401,6 +487,27 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                 children: [
                   const Text('측정 기기', style: TextStyle(fontWeight: FontWeight.bold)),
                   Text(widget.deviceType),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('의심 질환', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Expanded(
+                    child: Text(
+                      highProbabilityDiagnoses.isEmpty
+                          ? '의심 질환 없음'
+                          : highProbabilityDiagnoses.join(', '),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: highProbabilityDiagnoses.isEmpty
+                            ? Colors.black
+                            : const Color(0xFFFB755B),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ],

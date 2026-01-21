@@ -115,12 +115,10 @@ class EcgDataService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> completeSurvey() async { // 1. 함수 선언부에 async 추가
-      _isSurveyCompleted = true;
-
+  Future<void> completeSurvey() async { 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('isSurveyCompleted', _isSurveyCompleted);
-
+      await prefs.setBool('isSurveyCompleted', true);
+      print("설문 조사 완료");
       notifyListeners();
   }
 
@@ -163,6 +161,7 @@ class EcgDataService extends ChangeNotifier {
 
     print("건강 점수 업데이트 완료: $_totalScore점");
   }
+  
   Future<void> loadInitialData() async {
     final prefs = await SharedPreferences.getInstance();
     _userName = prefs.getString('username') ?? 'User';

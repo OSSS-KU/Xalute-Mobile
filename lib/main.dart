@@ -255,7 +255,7 @@ class _AuthCheckScreen extends StatelessWidget {
 
     return {
       'hasSession': hasSession,
-      'is SurveyCompleted': isSurveyCompleted,
+      'isSurveyCompleted': isSurveyCompleted,
     };
   }
 

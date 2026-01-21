@@ -127,6 +127,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
 
     if (mounted) setState(() => isLoading = false);
   }
+
   Widget _buildLeadButtons() {
     final leadLabels = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'];
 
@@ -181,13 +182,34 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
       return const Center(child: Text('해당 리드에 대한 데이터가 없습니다.', style: TextStyle(fontSize: 14)));
     }
 
-    final adjustedSpots = spots;
+    final adjustedSpots = isFirstSignal
+        ? spots.where((s) => s.x >= 5.0).toList()
+        : spots;
 
-    final xMax = adjustedSpots.last.x;
-    final yMin = adjustedSpots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
-    final yMax = adjustedSpots.map((e) => e.y).reduce((a, b) => a > b ? a : b);
+    // 2. 차트 범위 설정
+    final double minX = isFirstSignal ? 5.0 : adjustedSpots.first.x;
+    final double maxX = isFirstSignal ? 30.0 : adjustedSpots.last.x;
 
-    final chartWidth = xMax * 50 * zoomScale;
+    // --- [여기서부터 수정] ---
+
+    // 1. Y값들만 추출해서 정렬 (중앙값과 사분위수를 구하기 위함)
+    final List<double> yValues = spots.map((e) => e.y).toList()..sort();
+
+    // 2. 사분위수 계산 (데이터의 상위 25%, 50%, 75% 지점)
+    final double q1 = yValues[(yValues.length * 0.25).toInt()];
+    final double q2 = yValues[(yValues.length * 0.5).toInt()]; // 중앙값
+    final double q3 = yValues[(yValues.length * 0.75).toInt()];
+    final double iqr = q3 - q1; // 데이터가 밀집된 구간의 폭
+
+    // 3. 중앙값(q2)을 기준으로 '멀어지면 보이게' 스케일 설정
+    // 보통 IQR의 5~8배 정도면 R-Peak까지 다 포함하고, -40 같은 노이즈는 무시합니다.
+    final double k = 7.0;
+    final double yMin = q2 - (iqr * k);
+    final double yMax = q2 + (iqr * k);
+
+    // --- [여기까지 수정] ---
+
+    final chartWidth = (maxX - minX) * 50 * zoomScale;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -212,8 +234,8 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
             height: 300,
             child: LineChart(
               LineChartData(
-                minX: 0,
-                maxX: xMax,
+                minX: minX,
+                maxX: maxX,
                 minY: yMin,
                 maxY: yMax,
                 clipData: FlClipData.all(),
@@ -239,10 +261,11 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                       interval: 1,
                       reservedSize: 24,
                       getTitlesWidget: (value, meta) {
-                        final rounded = value.round();
-                        return (value - rounded).abs() < 0.05
-                            ? Text('${rounded}s', style: const TextStyle(fontSize: 10))
-                            : const SizedBox.shrink();
+                        final displayValue = isFirstSignal ? (value - 5.0).round() : value.round();
+                        if ((value - value.round()).abs() < 0.05 && displayValue >= 0) {
+                          return Text('${displayValue}s', style: const TextStyle(fontSize: 10));
+                        }
+                        return const SizedBox.shrink();
                       },
                     ),
                   ),
@@ -255,10 +278,16 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                 rangeAnnotations: isFirstSignal
                     ? RangeAnnotations(
                   verticalRangeAnnotations: List.generate(distances.length ~/ 2, (i) {
+                    // 1. 거리가 0.31 미만이면 그리지 않음 (null 반환)
+                    if (distances[i] < 0.31) return null;
+
+                    // 2. rPeaks 인덱스 유효성 검사 (기존 로직 유지)
                     if (rPeaks.length <= i * 2 + 1 || rPeaks[i * 2 + 1] >= spots.length) return null;
+
                     final x1 = spots[rPeaks[i * 2]].x;
                     final x2 = spots[rPeaks[i * 2 + 1]].x;
 
+                    // 3. 화면 범위 밖(5초 이전)이면 그리지 않음
                     if (x2 < 5.0) return null;
 
                     return VerticalRangeAnnotation(

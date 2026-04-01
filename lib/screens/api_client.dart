@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:xalute/main.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-const String baseUrl = 'http://34.44.245.53:3000/';
+const String baseUrl = 'http://35.216.60.242:9100/';
 
 // ======================
 // ApiClient

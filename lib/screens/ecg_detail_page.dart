@@ -56,101 +56,70 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
         .replaceAll(RegExp(r'-Infinity\b'), 'null');
   }
 
-  Future<void> _predict12Lead(File txtFile) async {
-    try {
-      final request = http.MultipartRequest('POST', Uri.parse('http://34.69.44.173:7001/predict12lead/512'));
-      request.files.add(await http.MultipartFile.fromPath('file', txtFile.path));
-
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      if (response.statusCode == 200) {
-        final cleanedBody = sanitizeJson(response.body);
-        final jsonData = jsonDecode(cleanedBody);
-        final resultArray = jsonData['result'];
-
-        if (resultArray != null && resultArray.isNotEmpty) {
-          // 데이터 구조에 맞춰 리드 데이터 할당 (3~14 인덱스)
-          final leads = resultArray[0][0].sublist(3, 14);
-          for (int i = 0; i < 11; i++) {
-            leadData[i + 1] = List.generate(
-              leads[i].length,
-                  (j) => FlSpot(j * (10.0 / 512.0), leads[i][j].toDouble()),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('12-Lead Reconstruction Error: $e');
-    }
-  }
-
-  Future<List<String>> _postToEcgFounder(List<List<double>> rawData, int samplingRate) async {
+  Future<Map<String, dynamic>> _postToEcgFounder(List<List<double>> rawData, int samplingRate) async {
     List<String> highProbabilityDiagnoses = [];
+    List<List<FlSpot>> reconstructedLeads = List.generate(12, (_) => []);
 
     try {
-      final url = Uri.parse('http://35.238.174.154:8000/ecg_founder/single_ecg');
-
-      // 디버깅: 전송 데이터 확인
-      debugPrint('=== ECG Founder Request ===');
-      debugPrint('Sampling Rate: $samplingRate');
-      debugPrint('Data Length: ${rawData.length}');
-      debugPrint('First 5 values: ${rawData.take(5).toList()}');
+      final url = Uri.parse('http://35.216.60.242:9102/ecg_founder/single_ecg');
 
       final body = jsonEncode({
         'sampling_rate': samplingRate,
         'data': rawData,
       });
 
-      debugPrint('Body length: ${body.length} bytes');
-      debugPrint('==========================');
-
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: body,
-      );
+      ).timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
         final cleanedBody = sanitizeJson(response.body);
         final result = jsonDecode(cleanedBody);
 
-        debugPrint('=== ECG Founder Response (일부) ===');
-        if (result['ecg_founder_result'] != null && result['ecg_founder_result'] is List) {
-          final founderResults = result['ecg_founder_result'] as List;
-          debugPrint('결과 개수: ${founderResults.length}');
-          debugPrint('첫 3개 결과: ${founderResults.take(3).toList()}');
+        // 12-lead 재구성 데이터 파싱 (m_ecg_net_results: 12 x 512)
+        if (result['m_ecg_net_results'] != null && result['m_ecg_net_results'] is List) {
+          final leads = result['m_ecg_net_results'] as List;
+          for (int i = 0; i < leads.length && i < 12; i++) {
+            final samples = leads[i] as List;
+            reconstructedLeads[i] = List.generate(
+              samples.length,
+              (j) => FlSpot(j * (10.0 / 512.0), (samples[j] as num).toDouble()),
+            );
+          }
+        }
 
-          for (var item in founderResults) {
+        // 진단 결과 파싱
+        if (result['ecg_founder_results'] != null && result['ecg_founder_results'] is List) {
+          final diagnosisResults = result['ecg_founder_results'] as List;
+          for (var item in diagnosisResults) {
             if (item is Map<String, dynamic>) {
               final probability = item['probability'];
               final diagnosis = item['diagnosis'];
-
               if (probability != null && diagnosis != null) {
                 final prob = (probability is num) ? probability.toDouble() : double.tryParse(probability.toString());
-
                 if (prob != null && prob >= 0.7) {
                   highProbabilityDiagnoses.add(diagnosis.toString());
-                  debugPrint('✅ 고확률 진단: $diagnosis (${prob.toStringAsFixed(2)})');
                 }
               }
             }
           }
         }
-        debugPrint('최종 고확률 진단 목록: $highProbabilityDiagnoses');
-        debugPrint('===================================');
-
       } else {
         debugPrint('❌ ECG Founder API Error: ${response.statusCode}');
-        debugPrint('Response body: ${response.body}');
       }
     } catch (e, stackTrace) {
       debugPrint('❌ ECG Founder Post Error: $e');
       debugPrint('StackTrace: $stackTrace');
     }
 
-    return highProbabilityDiagnoses;
+    return {
+      'diagnoses': highProbabilityDiagnoses,
+      'leads': reconstructedLeads,
+    };
   }
+
   Future<void> _loadData() async {
     try {
       final txtFile = File(widget.txtPath);
@@ -177,16 +146,19 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
         final baseX = txtSpots.isNotEmpty ? txtSpots.first.x : 0;
         leadData[0] = txtSpots.map((s) => FlSpot(s.x - baseX, s.y)).toList();
 
-        // 2. 12-Lead 재구성 실행
-        await _predict12Lead(txtFile);
-
-        // 3. ECG Founder 실행 및 결과 처리
-        final diagnosisList = await _postToEcgFounder(rawData, 512); // sampling_rate도 512로
+        // 2. ECG Founder 실행 (12-lead 재구성 + 진단 결과 동시 처리)
+        final ecgResult = await _postToEcgFounder(rawData, 512);
 
         // 상태 업데이트
         if (mounted) {
           setState(() {
-            highProbabilityDiagnoses = diagnosisList;
+            highProbabilityDiagnoses = ecgResult['diagnoses'] as List<String>;
+            final reconstructed = ecgResult['leads'] as List<List<FlSpot>>;
+            for (int i = 1; i < 12; i++) {
+              if (reconstructed[i].isNotEmpty) {
+                leadData[i] = reconstructed[i];
+              }
+            }
           });
         }
       }

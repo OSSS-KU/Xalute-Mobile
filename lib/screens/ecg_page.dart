@@ -212,7 +212,6 @@ class _EcgPageState extends State<EcgPage> {
                                     ),
                                   ),
                                   SizedBox(width: 6),
-                                  Icon(Icons.chevron_right),
                                 ],
                               ),
                               const Text("건강한 하루 보내세요",
@@ -228,26 +227,6 @@ class _EcgPageState extends State<EcgPage> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Align(
-                          alignment: Alignment.center,
-                          child: GestureDetector(
-                            onTap: _openSettings,
-                            child: Consumer<EcgDataService>(
-                              builder: (context, ecgService, child) {
-                                return CircleAvatar(
-                                  radius: 25,
-                                  backgroundColor: Colors.grey[200],
-                                  backgroundImage: ecgService
-                                      .profileImagePath != null
-                                      ? FileImage(
-                                      File(ecgService.profileImagePath!))
-                                      : const AssetImage(
-                                      'assets/icon/profile.png') as ImageProvider,
-                                );
-                              },
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),

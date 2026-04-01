@@ -19,6 +19,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'screens/main_tab_page.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -62,6 +63,18 @@ void setupWatchListener() {
 
   platform.setMethodCallHandler((call) async {
     debugPrint("👂 MethodChannel received call: ${call.method}");
+
+    if (call.method == 'getFirebaseToken') {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        debugPrint("❌ Firebase 토큰 요청 실패: 로그인되지 않음");
+        return null;
+      }
+      final token = await user.getIdToken(true); // true = 강제 갱신
+      debugPrint("✅ Firebase 토큰 반환 완료");
+      return token;
+    }
+
     if (call.method == 'onEcgFileReceived') {
       final Map<String, dynamic> data = jsonDecode(call.arguments);
 
@@ -282,7 +295,7 @@ class _AuthCheckScreen extends StatelessWidget {
         }
 
         // [체크 3] 둘 다 완료 -> 메인 페이지
-        return const EcgPage();
+        return const MainTabPage();
       },
     );
   }

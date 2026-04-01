@@ -53,7 +53,7 @@ class _HomePageState extends State<HomePage> {
               Text("Welcome. $username!", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const Text("This is Xalute!", style: TextStyle(fontSize: 18)),
               const SizedBox(height: 32),
-              Text("오늘의 건강 점수는", style: header),
+              Text("오늘의 건강 점100점수는", style: header),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [

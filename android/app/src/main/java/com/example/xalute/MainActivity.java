@@ -12,8 +12,11 @@ import com.google.android.gms.wearable.DataEvent;
 import com.google.android.gms.wearable.DataEventBuffer;
 import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageClient;
+import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.PutDataRequest;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 
 import org.json.JSONObject;
 
@@ -28,9 +31,11 @@ import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
-public class MainActivity extends FlutterActivity implements DataClient.OnDataChangedListener {
+public class MainActivity extends FlutterActivity implements DataClient.OnDataChangedListener, MessageClient.OnMessageReceivedListener {
     private static final String CHANNEL = "com.example.xalute/watch";
     private static final String START_APP_PATH = "/start-app";
+    private static final String GET_TOKEN_PATH = "/get-token";
+    private static final String TOKEN_RESPONSE_PATH = "/token-response";
     private MethodChannel methodChannel;
     private MessageClient messageClient;
     private String nodeId;
@@ -94,15 +99,37 @@ public class MainActivity extends FlutterActivity implements DataClient.OnDataCh
     }
 
     @Override
+    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+        if (messageEvent.getPath().equals(GET_TOKEN_PATH)) {
+            Log.d("MainActivity", "📩 워치로부터 Firebase 토큰 요청 수신");
+            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+            if (user == null) {
+                Log.e("MainActivity", "❌ 로그인된 사용자 없음");
+                return;
+            }
+            user.getIdToken(true).addOnSuccessListener(result -> {
+                String token = result.getToken();
+                if (token == null) return;
+                String sourceNodeId = messageEvent.getSourceNodeId();
+                messageClient.sendMessage(sourceNodeId, TOKEN_RESPONSE_PATH, token.getBytes())
+                        .addOnSuccessListener(unused -> Log.d("MainActivity", "✅ Firebase 토큰 워치로 전송 완료"))
+                        .addOnFailureListener(e -> Log.e("MainActivity", "❌ 토큰 전송 실패", e));
+            }).addOnFailureListener(e -> Log.e("MainActivity", "❌ 토큰 발급 실패", e));
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         Wearable.getDataClient(this).addListener(this);
+        Wearable.getMessageClient(this).addListener(this);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         Wearable.getDataClient(this).removeListener(this);
+        Wearable.getMessageClient(this).removeListener(this);
     }
 
     @Override

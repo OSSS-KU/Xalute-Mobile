@@ -57,6 +57,7 @@ class EcgDataService extends ChangeNotifier {
   String? _birthDate;
   String? _phoneNumber;
   String? _address;
+  String? _detailedAddress;
   String _totalScore = "50";
 
   String? get birthDate => _birthDate;
@@ -67,6 +68,7 @@ class EcgDataService extends ChangeNotifier {
   bool get isSurveyCompleted => _isSurveyCompleted;
   String? get phoneNumber => _phoneNumber;
   String? get address => _address;
+  String? get detailedAddress => _detailedAddress;
   String get totalScore => _totalScore;
 
   void setUserName(String name) {
@@ -104,6 +106,17 @@ class EcgDataService extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  void setDetailedAddress(String? dAddr) {
+    _detailedAddress = dAddr;
+    if (dAddr != null) {
+      _saveToPrefs('detailedAddress', dAddr);
+    } else {
+      _removeFromPrefs('detailedAddress');
+    }
+    notifyListeners();
+  }
+
 
   void setProfileImagePath(String? path) {
     _profileImagePath = path;
@@ -169,6 +182,7 @@ class EcgDataService extends ChangeNotifier {
     _birthDate = prefs.getString('birthDate');
     _phoneNumber = prefs.getString('phoneNumber');
     _address = prefs.getString('address');
+    _detailedAddress = prefs.getString('detailedAddress');
     _totalScore = prefs.getString('totalScore') ?? "50";
     _isSurveyCompleted = prefs.getBool('isSurveyCompleted') ?? false;
     _isLoading = false;

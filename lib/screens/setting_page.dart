@@ -11,6 +11,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:xalute/screens/api_client.dart';
 import 'package:kpostal/kpostal.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:xalute/screens/api_client.dart';
 
@@ -64,6 +65,7 @@ class _SettingPageState extends State<SettingPage> {
   final TextEditingController _detailedAddressController = TextEditingController();
 
   final FocusNode _nameFocus = FocusNode();
+  DateTime? _selectedDate;
   File? _profileImage;
   bool _hasChanges = false;
   bool _showRoadAddressField = false;
@@ -90,6 +92,7 @@ class _SettingPageState extends State<SettingPage> {
     final imagePath = prefs.getString('profileImagePath');
     final phoneNumber = prefs.getString('phoneNumber') ?? '';
     final address = prefs.getString('address') ?? '';
+    final detail = prefs.getString('detailedAddress') ?? '';
 
     // Firebase User 정보
     final user = FirebaseAuth.instance.currentUser;
@@ -108,8 +111,11 @@ class _SettingPageState extends State<SettingPage> {
       _nameController.text =  name.isNotEmpty ? name : firebaseName;
       _birthdayController.text = birthday;
       _phoneNumberController.text = phoneNumber;
-      _addressController.text = roadAddress;
-      _detailedAddressController.text = detailedAddress;
+      _addressController.text = address;
+      _detailedAddressController.text = detail;
+
+      roadAddress = address;
+      detailedAddress = detail;
       if (imagePath != null) {
         _profileImage = File(imagePath);
       }
@@ -120,106 +126,162 @@ class _SettingPageState extends State<SettingPage> {
     ecgService.setBirthDate(_birthdayController.text);
     ecgService.setPhoneNumber(_phoneNumberController.text);
     ecgService.setAddress(_addressController.text);
+    ecgService.setDetailedAddress(_detailedAddressController.text);
   }
 
   Future<void> _saveUserData() async {
-    final api = ApiClient();
+    // 1. 로딩 시작 (화면 터치 방지)
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFFFB755B)),
+      ),
+    );
 
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      // 2. 인증 정보 및 서비스 준비
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception("로그인이 필요합니다.");
+      final token = await user.getIdToken();
+      final prefs = await SharedPreferences.getInstance();
+      final ecgService = Provider.of<EcgDataService>(context, listen: false);
 
-    await prefs.setString('username', _nameController.text);
-    await prefs.setString('birthDate', _birthdayController.text);
-    await prefs.setString('phoneNumber', _phoneNumberController.text);
-    await prefs.setString('address', _addressController.text);
+      // 3. 서버 전송용 데이터 구성 (보내주신 PATCH 명세 기준)
+      final Map<String, dynamic> requestBody = {
+        "uid": user.uid,
+        "email": user.email,
+        "name": _nameController.text,
+        "phone": _phoneNumberController.text,
+        "address": _addressController.text,
+        "detail_address": _detailedAddressController.text,
+        "userRole": "USER",
+        "device": null,
+        "onboarded": true, // 정보를 입력했으므로 true로 변경
+      };
 
-    final ecgService = Provider.of<EcgDataService>(context, listen: false);
-    ecgService.setUserName(_nameController.text);
-    ecgService.setBirthDate(_birthdayController.text);
-    ecgService.setPhoneNumber(_phoneNumberController.text);
-    ecgService.setAddress(_addressController.text);
+      // 4. 서버 API 호출 (PATCH /user)
+      // URL은 본인의 서버 주소로 변경하세요 (예: http://10.0.2.2:3000/user)
+      final url = Uri.parse('http://35.216.60.242:9101/user');
+      final response = await http.patch(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(requestBody),
+      );
 
-    if (_profileImage != null) {
-      await prefs.setString('profileImagePath', _profileImage!.path);
-      ecgService.setProfileImagePath(_profileImage!.path);
-    } else {
-      await prefs.remove('profileImagePath');
-      ecgService.setProfileImagePath(null);
+      // 5. 로딩 다이얼로그 닫기
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+
+      if (response.statusCode == 200) {
+        // 6. 서버 저장 성공 시 -> 로컬 데이터 업데이트
+        await prefs.setString('username', _nameController.text);
+        await prefs.setString('birthDate', _birthdayController.text);
+        await prefs.setString('phoneNumber', _phoneNumberController.text);
+        await prefs.setString('address', _addressController.text);
+        await prefs.setString('detailedAddress', _detailedAddressController.text);
+
+        // Provider 업데이트 (메인 화면 등 즉시 반영)
+        ecgService.setUserName(_nameController.text);
+        ecgService.setBirthDate(_birthdayController.text);
+        ecgService.setPhoneNumber(_phoneNumberController.text);
+        ecgService.setAddress(_addressController.text);
+        ecgService.setDetailedAddress(_detailedAddressController.text);
+
+        // 프로필 이미지 경로 저장
+        if (_profileImage != null) {
+          await prefs.setString('profileImagePath', _profileImage!.path);
+          ecgService.setProfileImagePath(_profileImage!.path);
+        }
+
+        setState(() => _hasChanges = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("서버와 기기에 정보가 저장되었습니다.")),
+        );
+      } else {
+        throw Exception("서버 저장 실패 (상태코드: ${response.statusCode})");
+      }
+    } catch (e) {
+      // 에러 시 로딩 다이얼로그 닫기
+      if (mounted && Navigator.canPop(context)) Navigator.of(context, rootNavigator: true).pop();
+
+      print("저장 에러: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("저장 중 오류가 발생했습니다: $e")),
+      );
     }
+  }
 
-    setState(() => _hasChanges = false);
+  Future<void> _logout() async {
+    // SharedPreferences 초기화 (로컬 사용자 데이터 삭제)
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("저장되었습니다.")),
-    );
+    // Firebase 로그아웃
+    await FirebaseAuth.instance.signOut();
 
-    final response = await api.post(
-      "auth/login",
-      body: {"email": "test@example.com", "password": "1234"},
-    );
+    // 상태 초기화 (UI 반영)
+    if (!mounted) return;
+    setState(() {
+      _nameController.clear();
+      _birthdayController.clear();
+      _phoneNumberController.clear();
+      _addressController.clear();
+      _detailedAddressController.clear();
+      _profileImage = null;
+      _hasChanges = false;
+      postCode = '';
+      roadAddress = '';
+      jibunAddress = '';
+      detailedAddress = '';
+    });
 
-    print(response.body);
+    // EcgDataService 초기화
+    final ecgService = Provider.of<EcgDataService>(context, listen: false);
+    ecgService.setUserName('');
+    ecgService.setBirthDate('');
+    ecgService.setPhoneNumber('');
+    ecgService.setAddress('');
+    ecgService.setProfileImagePath(null);
+
+    // 로그인 화면으로 이동 (이전 스택 전체 제거)
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
 
-
+// 2. 날짜 선택 함수 구현
   Future<void> _selectBirthday() async {
-    DateTime initialDate = DateTime.tryParse(_birthdayController.text.replaceAll('.', '-')) ??
-        DateTime(2000, 1, 1);
-
-    DateTime selectedDate = initialDate;
-
-    await showModalBottomSheet(
+    final DateTime? picked = await showDatePicker(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (BuildContext builder) {
-        return SizedBox(
-          height: 300,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      child: const Text('취소', style: TextStyle(color: Colors.grey)),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    TextButton(
-                      child: const Text('확인', style: TextStyle(color: Colors.redAccent)),
-                      onPressed: () {
-                        setState(() {
-                          _birthdayController.text = DateFormat('yyyy.MM.dd').format(selectedDate);
-                          _hasChanges = true;
-                        });
-                        Navigator.pop(context);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.date,
-                  initialDateTime: initialDate,
-                  minimumDate: DateTime(1900),
-                  maximumDate: DateTime.now(),
-                  onDateTimeChanged: (DateTime newDate) {
-                    selectedDate = newDate;
-                  },
-                ),
-              ),
-            ],
+      initialDate: DateTime(2000, 1, 1), // 초기 표시 날짜 (예: 2000년생)
+      firstDate: DateTime(1900),          // 선택 가능한 가장 과거 날짜
+      lastDate: DateTime.now(),           // 오늘 이후는 선택 불가
+      locale: const Locale('ko', 'KR'),   // 한국어 설정 (main.dart 설정 필요)
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFFFB755B), // 선택 바 및 버튼 색상
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
           ),
+          child: child!,
         );
       },
     );
-  }
 
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+        // intl 패키지를 사용하여 날짜 포맷팅
+        _birthdayController.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
+  }
   Future<void> _pickImage() async {
     showDialog(
       context: context,
@@ -276,6 +338,7 @@ class _SettingPageState extends State<SettingPage> {
     _birthdayController.dispose();
     _phoneNumberController.dispose();
     _addressController.dispose();
+    _detailedAddressController.dispose();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -387,13 +450,6 @@ class _SettingPageState extends State<SettingPage> {
 
                           // 🔥 주소 검색 결과 → address controller
                           _addressController.text = roadAddress;
-
-                          // 🔥 상세주소가 이미 있으면 합치기
-                          if (_detailedAddressController.text.isNotEmpty) {
-                            _addressController.text =
-                            "$roadAddress ${_detailedAddressController.text}";
-                          }
-
                           _hasChanges = true;
                         });
                       },
@@ -471,10 +527,6 @@ class _SettingPageState extends State<SettingPage> {
                 onChanged: (value) {
                   setState(() {
                     detailedAddress = value;
-                    _addressController.text =
-                    roadAddress.isNotEmpty
-                        ? "$roadAddress $detailedAddress"
-                        : detailedAddress;
                     _hasChanges = true;
                   });
                 },
@@ -488,21 +540,27 @@ class _SettingPageState extends State<SettingPage> {
             ),
             const SizedBox(height: 8),
             GestureDetector(
-              onTap: _selectBirthday,
-              child: AbsorbPointer(
-                child: TextField(
-                  controller: _birthdayController,
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white,
-                    suffixIcon: const Icon(Icons.calendar_today),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: Color(0xFFEFEFEF)),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: Color(0xFFEFEFEF)),
-                      borderRadius: BorderRadius.circular(8),
+              onTap: _selectBirthday, // 탭하면 날짜 선택창 호출
+              child: MouseRegion( // 웹/데스크톱 대응용 (선택 사항)
+                cursor: SystemMouseCursors.click,
+                child: AbsorbPointer( // 텍스트 필드를 직접 타이핑하는 것을 막고 클릭 이벤트만 전달
+                  child: TextField(
+                    controller: _birthdayController,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: "날짜를 선택해 주세요",
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
+                      suffixIcon: const Icon(Icons.calendar_today, color: Color(0xFFFB755B)),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: const BorderSide(color: Color(0xFFEFEFEF)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: const BorderSide(color: Color(0xFFFB755B)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
@@ -521,6 +579,47 @@ class _SettingPageState extends State<SettingPage> {
                 child: const Text("저장하기", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
+            // ↓ 여기서부터 추가된 부분
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('로그아웃'),
+                      content: const Text('정말 로그아웃 하시겠습니까?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('취소', style: TextStyle(color: Colors.grey)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('로그아웃', style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) _logout();
+                },
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.redAccent),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text(
+                  '로그아웃',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ),
+            ),
+// ↑ 여기까지 추가된 부분
           ],
         ),
       ),

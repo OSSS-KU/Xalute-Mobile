@@ -15,6 +15,7 @@ import 'screens/login_page.dart';
 import 'screens/setting_page.dart';
 import 'screens/ecg_detail_page.dart';
 import 'screens/survey_page.dart';
+import 'screens/vital_signs_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -37,9 +38,14 @@ void main() async {
   final ecgService = EcgDataService();
   await ecgService.loadInitialData();
 
+  final vitalSignsService = VitalSignsService();
+
   runApp(
-    ChangeNotifierProvider.value(
-      value: ecgService,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: ecgService),
+        ChangeNotifierProvider.value(value: vitalSignsService),
+      ],
       child: const HealthApp(),
     ),
   );
@@ -87,6 +93,25 @@ void setupWatchListener() {
 
       debugPrint("📈 R-peaks: ${resultJson['result']['r_peaks']}");
       debugPrint("📉 distance_from_median: ${resultJson['result']['distance_from_median']}");
+
+      // 바이탈 사인 데이터 파싱 및 저장
+      try {
+        final List<dynamic> spo2Raw = jsonDecode(data['spo2_data'] ?? '[]');
+        final List<dynamic> hrRaw = jsonDecode(data['heart_rate_data'] ?? '[]');
+        final List<dynamic> tempRaw = jsonDecode(data['skin_temp_data'] ?? '[]');
+
+        final context = navigatorKey.currentContext!;
+        final vitalService = Provider.of<VitalSignsService>(context, listen: false);
+        vitalService.updateData(
+          spo2: spo2Raw.map((e) => (e as num).toInt()).toList(),
+          heartRate: hrRaw.map((e) => (e as num).toInt()).toList(),
+          skinTemp: tempRaw.map((e) => (e as num).toDouble()).toList(),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal(),
+        );
+        debugPrint("✅ 바이탈 데이터 업데이트 완료 - SpO2: ${spo2Raw.length}개, HR: ${hrRaw.length}개, Temp: ${tempRaw.length}개");
+      } catch (e) {
+        debugPrint("⚠️ 바이탈 데이터 파싱 실패: $e");
+      }
     }
   });
 }

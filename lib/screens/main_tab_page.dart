@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'ecg_page.dart';
 import 'setting_page.dart';
 import 'survey_list_page.dart';
+import 'vital_signs_page.dart';
 
 // ─────────────────────────────────────────────
 // 1) AppTab 모델
@@ -69,9 +70,15 @@ class _MainTabPageState extends State<MainTabPage> {
       builder: (controller) => EcgPage(),
     ),
     AppTab(
+      label: '바이탈',
+      icon: Icons.favorite_border,
+      activeIcon: Icons.favorite,
+      page: const VitalSignsPage(),
+    ),
+    AppTab(
       label: '설문기록',
-      icon: Icons.assignment_outlined,      // 비활성화 시 아이콘
-      activeIcon: Icons.assignment_turned_in, // 활성화 시 아이콘 (체크 표시가 있는 문서)
+      icon: Icons.assignment_outlined,
+      activeIcon: Icons.assignment_turned_in,
       page: const SurveyListPage(),
     ),
     AppTab(
@@ -80,13 +87,6 @@ class _MainTabPageState extends State<MainTabPage> {
       activeIcon: Icons.settings,
       page: const SettingPage(),
     ),
-    // ── 여기에 새 탭 추가 예시 ────────────────────
-    // AppTab(
-    //   label: '기록',
-    //   icon: Icons.history_outlined,
-    //   activeIcon: Icons.history,
-    //   page: const HistoryPage(),
-    // ),
   ];
 
   @override

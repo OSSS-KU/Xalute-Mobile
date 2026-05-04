@@ -143,13 +143,17 @@ public class MainActivity extends FlutterActivity implements DataClient.OnDataCh
                 String result = dataMapItem.getDataMap().getString("result");
                 long timestamp = dataMapItem.getDataMap().getLong("timestamp");
                 String resultJson = dataMapItem.getDataMap().getString("result_json");
+                String spo2Data = dataMapItem.getDataMap().getString("spo2_data");
+                String heartRateData = dataMapItem.getDataMap().getString("heart_rate_data");
+                String skinTempData = dataMapItem.getDataMap().getString("skin_temp_data");
 
-                readAsset(asset, result, timestamp, resultJson);
+                readAsset(asset, result, timestamp, resultJson, spo2Data, heartRateData, skinTempData);
             }
         }
     }
 
-    private void readAsset(Asset asset, String result, long timestamp, String resultJson) {
+    private void readAsset(Asset asset, String result, long timestamp, String resultJson,
+                            String spo2Data, String heartRateData, String skinTempData) {
         Wearable.getDataClient(this).getFdForAsset(asset).addOnSuccessListener(assetFd -> {
             try (InputStream inputStream = assetFd.getInputStream()) {
                 if (inputStream != null) {
@@ -161,9 +165,12 @@ public class MainActivity extends FlutterActivity implements DataClient.OnDataCh
                     data.put("result", result);
                     data.put("timestamp", timestamp);
                     data.put("result_json", resultJson);
+                    data.put("spo2_data", spo2Data != null ? spo2Data : "[]");
+                    data.put("heart_rate_data", heartRateData != null ? heartRateData : "[]");
+                    data.put("skin_temp_data", skinTempData != null ? skinTempData : "[]");
 
                     methodChannel.invokeMethod("onEcgFileReceived", data.toString());
-                    Log.d("MainActivity", "📥 Flutter로 ECG 파일, 결과 및 result_json 전달 완료");
+                    Log.d("MainActivity", "📥 Flutter로 ECG 파일, 결과, result_json, 바이탈 데이터 전달 완료");
                 }
             } catch (Exception e) {
                 Log.e("MainActivity", "❌ 파일 읽기 실패", e);

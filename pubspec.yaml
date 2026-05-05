@@ -49,7 +49,8 @@ flutter_native_splash:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/xalute.png"
+  image_path: "assets/icon/icon.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true

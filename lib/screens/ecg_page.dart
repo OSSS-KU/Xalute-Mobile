@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'ecg_data_service.dart';
 import '../main.dart';
-import 'package:lottie/lottie.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class EcgPage extends StatefulWidget {
@@ -506,10 +505,8 @@ class _EcgPageState extends State<EcgPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Lottie.asset(
-                      'assets/lottie/Animation.json',
-                      width: 100,
-                      height: 100,
+                    const CircularProgressIndicator(
+                      color: Color(0xFFFB755B),
                     ),
                     const SizedBox(height: 16),
                     const Text(

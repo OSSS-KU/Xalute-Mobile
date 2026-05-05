@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:path_provider/path_provider.dart';
 
 class EcgEntry {
   final DateTime dateTime;
@@ -230,19 +231,47 @@ class EcgDataService extends ChangeNotifier {
   Future<void> fetchEcgData() async {
     try {
       final List<dynamic> raw = await _channel.invokeMethod('getECGData');
+      if (raw.isEmpty) return;
 
-      for (var item in raw) {
+      final dir = await getApplicationDocumentsDirectory();
+
+      for (final item in raw) {
         final dateTime = DateTime.parse(item['date'] as String);
         final resultStr = item['prediction'] as String;
+        final samples = (item['samples'] as List<dynamic>)
+            .map((e) => (e as num).toDouble())
+            .toList();
+        final samplingRate = (item['samplingRate'] as num?)?.toInt() ?? 512;
+
+        final timestamp = dateTime.millisecondsSinceEpoch;
+        final resultKey = resultStr == '정상' ? 'normal' : 'abnormal';
+        final txtPath = '${dir.path}/ecg_${timestamp}_$resultKey.txt';
+        final jsonPath = '${dir.path}/ecg_${timestamp}_$resultKey.json';
+
+        // 중복 방지: 이미 저장된 파일이면 스킵
+        if (File(txtPath).existsSync()) continue;
+
+        // Android watch 포맷과 동일하게 저장: "(voltage, timeInSeconds) ..."
+        // HealthKit 전압은 mV 단위 — Android watch 데이터와 스케일 차이가 있을 수 있으므로
+        // API 응답이 Android와 다르게 보일 수 있음
+        final buffer = StringBuffer();
+        for (int i = 0; i < samples.length; i++) {
+          if (i > 0) buffer.write(' ');
+          buffer.write('(${samples[i]}, ${i / samplingRate})');
+        }
+        await File(txtPath).writeAsString(buffer.toString());
+        // HealthKit에는 r_peaks/distance 정보가 없으므로 빈 JSON
+        await File(jsonPath).writeAsString('{}');
+
         final color = resultStr.contains('이상') ? const Color(0xFFFB755B) : Colors.grey[700]!;
         _entries.add(EcgEntry(
           dateTime: dateTime,
           result: resultStr,
-          content: '',
+          content: buffer.toString(),
           color: color,
-          txtPath: '',
-          jsonPath: '',
-          deviceType: Platform.isIOS ? 'iOS' : 'Android',
+          txtPath: txtPath,
+          jsonPath: jsonPath,
+          deviceType: 'Apple Watch',
         ));
       }
       notifyListeners();
@@ -252,7 +281,13 @@ class EcgDataService extends ChangeNotifier {
   }
 
   Future<void> loadFromLocalFiles() async {
-    final dir = Directory('/data/user/0/com.example.xalute/app_flutter');
+    final Directory dir;
+    if (Platform.isAndroid) {
+      dir = Directory('/data/user/0/com.example.xalute/app_flutter');
+    } else {
+      final docDir = await getApplicationDocumentsDirectory();
+      dir = docDir;
+    }
     if (!dir.existsSync()) return;
 
     final files = dir.listSync();

@@ -99,7 +99,8 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
               final diagnosis = item['diagnosis'];
               if (probability != null && diagnosis != null) {
                 final prob = (probability is num) ? probability.toDouble() : double.tryParse(probability.toString());
-                if (prob != null && prob >= 0.7) {
+                const _targetDiseases = {'AMI', 'IMI', 'LMI'};
+                if (prob != null && prob >= 0.7 && _targetDiseases.contains(diagnosis.toString())) {
                   highProbabilityDiagnoses.add(diagnosis.toString());
                 }
               }

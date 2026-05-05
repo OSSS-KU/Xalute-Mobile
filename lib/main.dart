@@ -310,14 +310,14 @@ class _AuthCheckScreen extends StatelessWidget {
         final bool isSurveyCompleted = snapshot.data?['isSurveyCompleted'] ?? false;
 
         // [체크 1] 로그인 안 됨 -> 로그인 페이지
-        if (!hasSession) {
-          return const LoginPage();
-        }
+        //if (!hasSession) {
+        //  return const LoginPage();
+        //}
 
         // [체크 2] 로그인은 됐는데 설문은 안 함 -> 설문 페이지
-        if (!isSurveyCompleted) {
-          return SurveyPage();
-        }
+        //if (!isSurveyCompleted) {
+        //  return SurveyPage();
+        //}
 
         // [체크 3] 둘 다 완료 -> 메인 페이지
         return const MainTabPage();

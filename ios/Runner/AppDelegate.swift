@@ -95,38 +95,44 @@ import HealthKit
     }
 
     let ecg = ecgs[index]
-    var samples = [Double]()
     let mVUnit = HKUnit(from: "mV")
     let formatter = ISO8601DateFormatter()
 
-    let voltageQuery = HKElectrocardiogramQuery(ecg) { [weak self] _, voltageResult in
+    // HKElectrocardiogramQuery는 메인 스레드에서 생성·실행
+    DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }
-      switch voltageResult {
-      case .measurement(let m):
-        if let qty = m.quantity(for: .appleWatchSimilarToLeadI) {
-          samples.append(qty.doubleValue(for: mVUnit))
+
+      var samples = [Double]()
+
+      let voltageQuery = HKElectrocardiogramQuery(ecg) { [weak self] _, voltageResult in
+        guard let self = self else { return }
+        switch voltageResult {
+        case .measurement(let m):
+          if let qty = m.quantity(for: .appleWatchSimilarToLeadI) {
+            samples.append(qty.doubleValue(for: mVUnit))
+          }
+        case .done:
+          let prediction: String
+          switch ecg.classification {
+          case .sinusRhythm: prediction = "정상"
+          default:           prediction = "이상 소견 의심"
+          }
+          var next = accumulated
+          next.append([
+            "date": formatter.string(from: ecg.startDate),
+            "prediction": prediction,
+            "samples": samples,
+            "samplingRate": 512,
+          ])
+          self.processECGsSequentially(ecgs: ecgs, index: index + 1, accumulated: next, flutterResult: flutterResult)
+        case .error(let err):
+          print("ECG voltage error at index \(index): \(err)")
+          self.processECGsSequentially(ecgs: ecgs, index: index + 1, accumulated: accumulated, flutterResult: flutterResult)
+        @unknown default:
+          self.processECGsSequentially(ecgs: ecgs, index: index + 1, accumulated: accumulated, flutterResult: flutterResult)
         }
-      case .done:
-        let prediction: String
-        switch ecg.classification {
-        case .sinusRhythm: prediction = "정상"
-        default:           prediction = "이상 소견 의심"
-        }
-        var next = accumulated
-        next.append([
-          "date": formatter.string(from: ecg.startDate),
-          "prediction": prediction,
-          "samples": samples,
-          "samplingRate": 512,
-        ])
-        self.processECGsSequentially(ecgs: ecgs, index: index + 1, accumulated: next, flutterResult: flutterResult)
-      case .error(let err):
-        print("ECG voltage error at index \(index): \(err)")
-        self.processECGsSequentially(ecgs: ecgs, index: index + 1, accumulated: accumulated, flutterResult: flutterResult)
-      @unknown default:
-        self.processECGsSequentially(ecgs: ecgs, index: index + 1, accumulated: accumulated, flutterResult: flutterResult)
       }
+      self.healthStore.execute(voltageQuery)
     }
-    healthStore.execute(voltageQuery)
   }
 }

@@ -22,7 +22,7 @@ import UIKit
 
     // HealthKit 임시 제거 — dyld 크래시 원인 격리용
     ecgChannel.setMethodCallHandler { _, flutterResult in
-      flutterResult([])
+      flutterResult(NSArray())
     }
 
     return result

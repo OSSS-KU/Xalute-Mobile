@@ -12,31 +12,36 @@ import HealthKit
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
 
-    let controller = window?.rootViewController as! FlutterViewController
+    // super를 먼저 호출해 window/rootViewController가 초기화된 뒤에 채널 설정
+    let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return result
+    }
+
     let ecgChannel = FlutterMethodChannel(
       name: "com.example.health/ecg",
       binaryMessenger: controller.binaryMessenger
     )
 
-    ecgChannel.setMethodCallHandler { [weak self] call, result in
+    ecgChannel.setMethodCallHandler { [weak self] call, flutterResult in
       guard let self = self else { return }
-      switch call.method {
-      case "getECGData":
+      if call.method == "getECGData" {
         if #available(iOS 14.0, *) {
-          self.fetchECGData(flutterResult: result)
+          self.fetchECGData(flutterResult: flutterResult)
         } else {
-          result(FlutterError(
+          flutterResult(FlutterError(
             code: "UNSUPPORTED",
             message: "ECG requires iOS 14.0 or later",
             details: nil
           ))
         }
-      default:
-        result(FlutterMethodNotImplemented)
+      } else {
+        flutterResult(FlutterMethodNotImplemented)
       }
     }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    return result
   }
 
   @available(iOS 14.0, *)
@@ -48,12 +53,15 @@ import HealthKit
 
     let ecgType = HKObjectType.electrocardiogramType()
     healthStore.requestAuthorization(toShare: nil, read: [ecgType]) { [weak self] success, error in
-      guard let self = self, success else {
-        flutterResult(FlutterError(
-          code: "AUTH_FAILED",
-          message: error?.localizedDescription ?? "HealthKit 접근 권한이 거부되었습니다",
-          details: nil
-        ))
+      guard let self = self else { return }
+      guard success else {
+        DispatchQueue.main.async {
+          flutterResult(FlutterError(
+            code: "AUTH_FAILED",
+            message: error?.localizedDescription ?? "HealthKit 접근 권한이 거부되었습니다",
+            details: nil
+          ))
+        }
         return
       }
       self.queryECGSamples(flutterResult: flutterResult)
@@ -72,16 +80,14 @@ import HealthKit
       sortDescriptors: [sortDescriptor]
     ) { [weak self] _, samples, error in
       guard let self = self else { return }
-      guard let ecgs = samples as? [HKElectrocardiogram], error == nil else {
-        flutterResult(FlutterError(
-          code: "QUERY_FAILED",
-          message: error?.localizedDescription ?? "ECG 데이터를 가져오지 못했습니다",
-          details: nil
-        ))
+      if let error = error {
+        DispatchQueue.main.async {
+          flutterResult(FlutterError(code: "QUERY_FAILED", message: error.localizedDescription, details: nil))
+        }
         return
       }
-      if ecgs.isEmpty {
-        flutterResult([])
+      guard let ecgs = samples as? [HKElectrocardiogram], !ecgs.isEmpty else {
+        DispatchQueue.main.async { flutterResult([]) }
         return
       }
       self.fetchVoltageSamples(ecgs: ecgs, flutterResult: flutterResult)
@@ -95,35 +101,34 @@ import HealthKit
     let group = DispatchGroup()
     let lock = NSLock()
     let dateFormatter = ISO8601DateFormatter()
-    // millivolt — matches the amplitude scale expected by the ECG analysis API
     let mVUnit = HKUnit(from: "mV")
 
     for ecg in ecgs {
       group.enter()
-      var voltageSamples: [Double] = []
 
-      let voltageQuery = HKElectrocardiogramQuery(ecg) { _, result in
-        switch result {
+      // 각 ECG마다 독립적인 배열 — 클로저가 자신의 배열만 접근하므로 락 불필요
+      var voltageSamples = [Double]()
+
+      let voltageQuery = HKElectrocardiogramQuery(ecg) { _, voltageResult in
+        switch voltageResult {
         case .measurement(let measurement):
-          if let voltage = measurement.quantity(for: .appleWatchSimilarToLeadI) {
-            voltageSamples.append(voltage.doubleValue(for: mVUnit))
+          if let qty = measurement.quantity(for: .appleWatchSimilarToLeadI) {
+            voltageSamples.append(qty.doubleValue(for: mVUnit))
           }
         case .done:
           let prediction: String
           switch ecg.classification {
-          case .sinusRhythm:
-            prediction = "정상"
-          default:
-            // atrialFibrillation, inconclusive variants → 이상 소견 의심
-            prediction = "이상 소견 의심"
+          case .sinusRhythm: prediction = "정상"
+          default:           prediction = "이상 소견 의심"
           }
-          lock.lock()
-          results.append([
+          let entry: [String: Any] = [
             "date": dateFormatter.string(from: ecg.startDate),
             "prediction": prediction,
             "samples": voltageSamples,
             "samplingRate": 512,
-          ])
+          ]
+          lock.lock()
+          results.append(entry)
           lock.unlock()
           group.leave()
         case .error(let err):

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // ─── Data Models ────────────────────────────────────────────────────
 
@@ -130,6 +131,7 @@ class News2Result {
 // ─── Service ────────────────────────────────────────────────────────
 
 class VitalSignsService extends ChangeNotifier {
+  static const _watchChannel = MethodChannel('com.example.xalute/watch');
   // Current session (per ECG measurement)
   List<int> spo2Data = [];
   List<int> heartRateData = [];
@@ -171,6 +173,21 @@ class VitalSignsService extends ChangeNotifier {
 
     _computeScores();
     notifyListeners();
+  }
+
+  Future<void> fetchVitalSigns() async {
+    final Map<dynamic, dynamic> raw =
+        await _watchChannel.invokeMethod('fetchVitalSigns');
+    final spo2 = (raw['spo2_data'] as List<dynamic>).map((e) => (e as num).toInt()).toList();
+    final hr   = (raw['heart_rate_data'] as List<dynamic>).map((e) => (e as num).toInt()).toList();
+    final temp = (raw['skin_temp_data'] as List<dynamic>).map((e) => (e as num).toDouble()).toList();
+    final ts   = raw['timestamp'] as int;
+    updateData(
+      spo2: spo2,
+      heartRate: hr,
+      skinTemp: temp,
+      timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+    );
   }
 
   void _addToHistory(VitalMeasurement m) {

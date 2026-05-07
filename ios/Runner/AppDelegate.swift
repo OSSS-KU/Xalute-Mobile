@@ -104,7 +104,8 @@ import HealthKit
     var latestDate: Date? = nil
 
     group.enter()
-    querySamples(.heartRate, unit: HKUnit(from: "count/min"), limit: 20) { values, date in
+    let hrUnit = HKUnit.count().unitDivided(by: HKUnit.minute())
+    querySamples(.heartRate, unit: hrUnit, limit: 20) { values, date in
       hrSamples = values.map { Int($0.rounded()) }
       if let d = date { latestDate = latestDate.map { max($0, d) } ?? d }
       group.leave()

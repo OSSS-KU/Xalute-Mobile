@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'survey_page.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart'; // URL 오픈용 (선택 사항)
 
 class SurveyListPage extends StatefulWidget {
   const SurveyListPage({super.key});
@@ -39,7 +38,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
       print("로그: 토큰 획득 성공");
 
       // ★ 여기 주소를 실제 서버 주소로 반드시 바꿔주세요!
-      final url = Uri.parse('http://35.238.174.154:3010/user/survey/list');
+      final url = Uri.parse('http://35.216.60.242:9101/user/survey/list');
 
       final response = await http.get(
         url,
@@ -236,39 +235,40 @@ class _SurveyListPageState extends State<SurveyListPage> {
 
           if (snapshot.hasData && snapshot.data!.statusCode == 200) {
             try {
-              // 디버깅: 서버에서 온 원본 데이터를 콘솔에 출력해서 확인해보세요.
               print("상세 데이터 원본: ${snapshot.data!.body}");
 
               final Map<String, dynamic> data = json.decode(utf8.decode(snapshot.data!.bodyBytes));
 
-              double score = 100.0;
+              final int smokingScore  = (data['smoking']  as num?)?.toInt() ?? 0;
+              final int drinkingScore = (data['drinking'] as num?)?.toInt() ?? 0;
+              final int activityScore = (data['activity'] as num?)?.toInt() ?? 0;
 
-              // 데이터가 null일 경우를 대비해 '??'를 사용하여 기본값을 설정합니다.
-              String smoking = data['smoking']?.toString() ?? "아니오";
-              String drinking = data['drinking']?.toString() ?? "아니오";
-              String activity = data['activity']?.toString() ?? "예";
+              final double height = (data['height'] as num?)?.toDouble() ?? 0;
+              final double weight = (data['weight'] as num?)?.toDouble() ?? 0;
 
-              if (smoking == "예") score -= 10;
-              if (drinking == "예") score -= 5;
-              if (activity == "아니오") score -= 5;
-
-              // 질병 이력 처리
-              final List<dynamic> history = data['diseaseHistory'] ?? [];
-              for (var item in history) {
-                if (item['doctor_diagnosed'] == true) score -= 10;
-                if (item['med_intake'] == true) score -= 5;
+              int bScore = 0;
+              if (height > 0 && weight > 0) {
+                final double bmi = weight / ((height / 100) * (height / 100));
+                if (bmi < 18.5)      bScore = 10;
+                else if (bmi < 23.0) bScore = 25;
+                else if (bmi < 25.0) bScore = 15;
+                else if (bmi < 30.0) bScore = 5;
+                else                 bScore = 0;
               }
 
-              if (score < 0) score = 0;
+              final int score = smokingScore + drinkingScore + activityScore + bScore;
 
               String status = "좋음";
               Color statusColor = Colors.green;
-              if (score < 60) {
-                status = "주의";
-                statusColor = Colors.orange;
-              } else if (score < 40) {
+              if (score < 40) {
                 status = "위험";
                 statusColor = Colors.red;
+              } else if (score < 60) {
+                status = "주의";
+                statusColor = Colors.orange;
+              } else if (score < 80) {
+                status = "양호";
+                statusColor = Colors.blue;
               }
 
               return AlertDialog(
@@ -289,7 +289,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
                       ),
                       child: Column(
                         children: [
-                          Text("${score.toInt()}", style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: statusColor)),
+                          Text("$score", style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: statusColor)),
                           Text("점", style: TextStyle(fontSize: 18, color: statusColor)),
                         ],
                       ),
@@ -297,10 +297,11 @@ class _SurveyListPageState extends State<SurveyListPage> {
                     const SizedBox(height: 15),
                     Text("상태: $status", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: statusColor)),
                     const Divider(height: 30),
-                    // 키/몸무게 값도 null 체크 추가
                     _buildDetailRow("키/몸무게", "${data['height'] ?? '-'}cm / ${data['weight'] ?? '-'}kg"),
-                    _buildDetailRow("흡연 여부", smoking),
-                    _buildDetailRow("음주 여부", drinking),
+                    _buildDetailRow("흡연 점수", "+$smokingScore점"),
+                    _buildDetailRow("음주 점수", "+$drinkingScore점"),
+                    _buildDetailRow("신체활동 점수", "+$activityScore점"),
+                    _buildDetailRow("BMI 점수", "+${bScore}점"),
                   ],
                 ),
                 actions: [

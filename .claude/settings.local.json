@@ -4,7 +4,10 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(dart analyze *)"
+      "Bash(dart analyze *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 5 http://35.216.60.242:9100/user/survey/list)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 5 http://35.216.60.242:9101/user/survey/list)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 5 http://35.238.174.154:3010/user/survey/list)"
     ]
   }
 }

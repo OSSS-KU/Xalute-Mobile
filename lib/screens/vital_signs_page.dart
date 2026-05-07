@@ -1,11 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'vital_signs_service.dart';
 
-class VitalSignsPage extends StatelessWidget {
+class VitalSignsPage extends StatefulWidget {
   const VitalSignsPage({super.key});
+
+  @override
+  State<VitalSignsPage> createState() => _VitalSignsPageState();
+}
+
+class _VitalSignsPageState extends State<VitalSignsPage> {
+  bool _isLoading = false;
+
+  Future<void> _handleLoadButton() async {
+    setState(() => _isLoading = true);
+    try {
+      await Provider.of<VitalSignsService>(context, listen: false)
+          .fetchVitalSigns();
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'NO_DATA') {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('측정 데이터 없음', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text(
+              '최근 24시간 내 바이탈 데이터가 없습니다.\n\nApple Watch에서 산소포화도, 심박수, 피부 온도를 측정한 후 다시 조회해 주세요.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('확인', style: TextStyle(color: Color(0xFFFB755B))),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('데이터 조회 실패: ${e.message ?? e.code}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('데이터 조회 실패: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,13 +68,84 @@ class VitalSignsPage extends StatelessWidget {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
       ),
-      body: Consumer<VitalSignsService>(
-        builder: (context, service, _) {
-          if (!service.hasData) {
-            return _EmptyState();
-          }
-          return _DataView(service: service);
-        },
+      body: Stack(
+        children: [
+          Consumer<VitalSignsService>(
+            builder: (context, service, _) {
+              if (!service.hasData) {
+                return _EmptyState();
+              }
+              return _DataView(service: service);
+            },
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFFF8F9FA).withOpacity(0),
+                    const Color(0xFFF8F9FA),
+                  ],
+                ),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFB755B),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                  ),
+                  onPressed: _isLoading ? null : _handleLoadButton,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : const Text(
+                          '데이터 조회',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ),
+          if (_isLoading)
+            AbsorbPointer(
+              absorbing: true,
+              child: Container(
+                color: Colors.black54,
+                alignment: Alignment.center,
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFFFB755B)),
+                    SizedBox(height: 16),
+                    Text(
+                      '바이탈 데이터를 조회하고 있어요\n잠시만 기다려주세요',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -74,7 +192,7 @@ class _DataView extends StatelessWidget {
         : '-';
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
         Row(
           children: [
@@ -370,7 +488,7 @@ class _News2Card extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               const Text(
-                '개선 NEWS2',
+                '건강 위험도',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

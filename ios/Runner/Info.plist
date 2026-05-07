@@ -24,8 +24,21 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.393654640908-8k1bq7vat42ttaj6m2d887ge0rpriung</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
-	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<string>5</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string></string>
 	<key>LSRequiresIPhoneOS</key>
@@ -40,8 +53,6 @@
 	<string>심전도 데이터를 확인하기 위해 건강 앱에 접근합니다.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>건강 데이터를 기록하기 위해 건강 앱에 접근합니다.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>디버거 연결 및 개발용</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -69,16 +80,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.393654640908-8k1bq7vat42ttaj6m2d887ge0rpriung</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

@@ -59,7 +59,8 @@ void main() async {
       final ecgService = Provider.of<EcgDataService>(context, listen: false);
       await preloadSavedEcgFiles(ecgService);
     } else {
-      debugPrint("🟡 ECG 초기화 생략 (iOS)");
+      debugPrint("🍎 iOS 환경 - HealthKit 바이탈 사인 초기화");
+      setupIosVitalSigns();
     }
   });
 }
@@ -115,6 +116,58 @@ void setupWatchListener() {
     }
   });
 }
+
+// ── iOS HealthKit vital signs ──────────────────────────────────────────
+
+void setupIosVitalSigns() {
+  const MethodChannel platform = MethodChannel('com.example.xalute/watch');
+
+  // Receive observer-pushed updates from native
+  platform.setMethodCallHandler((call) async {
+    if (call.method == 'onVitalSignsReceived') {
+      final data = Map<String, dynamic>.from(call.arguments as Map);
+      _applyIosVitalSigns(data);
+    }
+  });
+
+  // Initial fetch on app start
+  platform.invokeMethod('fetchVitalSigns').then((result) {
+    if (result is Map) {
+      _applyIosVitalSigns(Map<String, dynamic>.from(result));
+    }
+  }).catchError((Object e) {
+    debugPrint('⚠️ HealthKit 바이탈 사인 초기화 실패: $e');
+  });
+}
+
+void _applyIosVitalSigns(Map<String, dynamic> data) {
+  final context = navigatorKey.currentContext;
+  if (context == null) return;
+
+  final spo2 = (data['spo2_data'] as List? ?? [])
+      .map((e) => (e as num).toInt())
+      .toList();
+  final hr = (data['heart_rate_data'] as List? ?? [])
+      .map((e) => (e as num).toInt())
+      .toList();
+  final temp = (data['skin_temp_data'] as List? ?? [])
+      .map((e) => (e as num).toDouble())
+      .toList();
+  final ts = (data['timestamp'] as num?)?.toInt() ??
+      DateTime.now().millisecondsSinceEpoch;
+
+  final vitalService = Provider.of<VitalSignsService>(context, listen: false);
+  vitalService.updateData(
+    spo2: spo2,
+    heartRate: hr,
+    skinTemp: temp,
+    timestamp: DateTime.fromMillisecondsSinceEpoch(ts).toLocal(),
+  );
+  debugPrint(
+      "✅ iOS HealthKit 바이탈 업데이트 - SpO2: ${spo2.length}개, HR: ${hr.length}개, Temp: ${temp.length}개");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 
 Future<void> saveReceivedEcg(
     String content,

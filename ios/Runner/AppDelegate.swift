@@ -5,6 +5,8 @@ import HealthKit
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private let healthStore = HKHealthStore()
+  private var watchChannel: FlutterMethodChannel?
+  private var observersSetUp = false
 
   override func application(
     _ application: UIApplication,
@@ -18,11 +20,11 @@ import HealthKit
       return result
     }
 
+    // ── ECG channel (existing) ──────────────────────────────────────
     let ecgChannel = FlutterMethodChannel(
       name: "com.example.health/ecg",
       binaryMessenger: controller.binaryMessenger
     )
-
     ecgChannel.setMethodCallHandler { [weak self] call, flutterResult in
       guard let self = self else { return }
       if call.method == "getECGData" {
@@ -36,8 +38,159 @@ import HealthKit
       }
     }
 
+    // ── Vital signs channel (same name as Android) ─────────────────
+    let vitalChannel = FlutterMethodChannel(
+      name: "com.example.xalute/watch",
+      binaryMessenger: controller.binaryMessenger
+    )
+    self.watchChannel = vitalChannel
+    vitalChannel.setMethodCallHandler { [weak self] call, flutterResult in
+      guard let self = self else { return }
+      if call.method == "fetchVitalSigns" {
+        self.fetchVitalSigns(completion: flutterResult)
+      } else {
+        flutterResult(FlutterMethodNotImplemented)
+      }
+    }
+
     return result
   }
+
+  // ─── Vital Signs ────────────────────────────────────────────────
+
+  private func fetchVitalSigns(completion: @escaping FlutterResult) {
+    guard HKHealthStore.isHealthDataAvailable() else {
+      completion(FlutterError(code: "UNAVAILABLE", message: "HealthKit을 사용할 수 없는 기기입니다", details: nil))
+      return
+    }
+
+    var readTypes: Set<HKObjectType> = [
+      HKQuantityType.quantityType(forIdentifier: .heartRate)!,
+      HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!,
+    ]
+    if #available(iOS 16.0, *) {
+      readTypes.insert(HKQuantityType.quantityType(forIdentifier: .appleSleepingWristTemperature)!)
+    }
+
+    healthStore.requestAuthorization(toShare: nil, read: readTypes) { [weak self] success, error in
+      guard let self = self else { return }
+      guard success else {
+        DispatchQueue.main.async {
+          completion(FlutterError(code: "AUTH_FAILED", message: error?.localizedDescription ?? "HealthKit 권한 거부", details: nil))
+        }
+        return
+      }
+      if !self.observersSetUp {
+        self.setupObservers()
+        self.observersSetUp = true
+      }
+      self.queryVitalSigns { payload in
+        DispatchQueue.main.async {
+          if let payload = payload {
+            completion(payload)
+          } else {
+            completion(FlutterError(code: "NO_DATA", message: "최근 24시간 내 바이탈 데이터가 없습니다", details: nil))
+          }
+        }
+      }
+    }
+  }
+
+  private func queryVitalSigns(completion: @escaping ([String: Any]?) -> Void) {
+    let group = DispatchGroup()
+    var hrSamples: [Int] = []
+    var spo2Samples: [Int] = []
+    var tempSamples: [Double] = []
+    var latestDate: Date? = nil
+
+    group.enter()
+    querySamples(.heartRate, unit: HKUnit(from: "count/min"), limit: 20) { values, date in
+      hrSamples = values.map { Int($0.rounded()) }
+      if let d = date { latestDate = latestDate.map { max($0, d) } ?? d }
+      group.leave()
+    }
+
+    group.enter()
+    querySamples(.oxygenSaturation, unit: .percent(), limit: 20) { values, date in
+      // HealthKit stores SpO2 as 0.0–1.0
+      spo2Samples = values.map { Int(($0 * 100).rounded()) }
+      if let d = date { latestDate = latestDate.map { max($0, d) } ?? d }
+      group.leave()
+    }
+
+    if #available(iOS 16.0, *) {
+      group.enter()
+      querySamples(.appleSleepingWristTemperature, unit: .degreeCelsius(), limit: 20) { values, date in
+        tempSamples = values
+        if let d = date { latestDate = latestDate.map { max($0, d) } ?? d }
+        group.leave()
+      }
+    }
+
+    group.notify(queue: .main) {
+      guard !hrSamples.isEmpty || !spo2Samples.isEmpty || !tempSamples.isEmpty else {
+        completion(nil)
+        return
+      }
+      let ts = Int((latestDate ?? Date()).timeIntervalSince1970 * 1000)
+      completion([
+        "heart_rate_data": hrSamples,
+        "spo2_data":       spo2Samples,
+        "skin_temp_data":  tempSamples,
+        "timestamp":       ts,
+      ])
+    }
+  }
+
+  private func querySamples(
+    _ identifier: HKQuantityTypeIdentifier,
+    unit: HKUnit,
+    limit: Int,
+    completion: @escaping ([Double], Date?) -> Void
+  ) {
+    guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else {
+      completion([], nil)
+      return
+    }
+    let since = Date().addingTimeInterval(-86400) // last 24h
+    let predicate = HKQuery.predicateForSamples(withStart: since, end: Date(), options: .strictStartDate)
+    let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+
+    let query = HKSampleQuery(
+      sampleType: type, predicate: predicate, limit: limit, sortDescriptors: [sort]
+    ) { _, samples, _ in
+      let typed = (samples as? [HKQuantitySample]) ?? []
+      let values = typed.map { $0.quantity.doubleValue(for: unit) }
+      completion(values, typed.first?.startDate)
+    }
+    healthStore.execute(query)
+  }
+
+  // Push new data to Flutter whenever HealthKit notifies of updates
+  private func setupObservers() {
+    let ids: [HKQuantityTypeIdentifier] = [.heartRate, .oxygenSaturation]
+    for id in ids {
+      guard let type = HKQuantityType.quantityType(forIdentifier: id) else { continue }
+      let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, _, error in
+        guard error == nil else { return }
+        self?.pushVitalSignsToFlutter()
+      }
+      healthStore.execute(query)
+      // Hourly background delivery — enough for wellness/NEWS2 baseline
+      healthStore.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+    }
+  }
+
+  private func pushVitalSignsToFlutter() {
+    queryVitalSigns { [weak self] payload in
+      guard let self = self, let payload = payload else { return }
+      DispatchQueue.main.async {
+        self.watchChannel?.invokeMethod("onVitalSignsReceived", arguments: payload)
+      }
+    }
+  }
+
+  // ─── ECG (existing, unchanged) ───────────────────────────────────
 
   @available(iOS 14.0, *)
   private func fetchECGData(flutterResult: @escaping FlutterResult) {

@@ -368,9 +368,9 @@ class _AuthCheckScreen extends StatelessWidget {
         }
 
         // [체크 2] 로그인은 됐는데 설문은 안 함 -> 설문 페이지
-        //if (!isSurveyCompleted) {
-        //  return SurveyPage();
-        //}
+        if (!isSurveyCompleted) {
+          return SurveyPage();
+        }
 
         // [체크 3] 둘 다 완료 -> 메인 페이지
         return const MainTabPage();

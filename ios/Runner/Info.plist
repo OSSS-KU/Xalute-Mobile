@@ -63,6 +63,18 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Reversed iOS client ID from firebase_options.dart — required for Google Sign-In redirect -->
+				<string>com.googleusercontent.apps.393654640908-8k1bq7vat42ttaj6m2d887ge0rpriung</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>심전도, 심박수, 산소포화도, 체온 데이터를 확인하기 위해 건강 앱에 접근합니다.</string>
 </dict>

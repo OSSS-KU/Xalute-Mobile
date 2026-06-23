@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="com.samsung.android.sdk.health.data.permission.HEART_RATE"/>
+    <uses-permission android:name="com.samsung.android.sdk.health.data.permission.BLOOD_OXYGEN"/>
+    <uses-permission android:name="com.samsung.android.sdk.health.data.permission.SKIN_TEMPERATURE"/>
     <application
         android:label="xalute"
         android:name="${applicationName}"

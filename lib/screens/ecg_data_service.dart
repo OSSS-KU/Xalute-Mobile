@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class EcgEntry {
   final DateTime dateTime;
@@ -43,6 +46,18 @@ Future<String> _getIdToken() async {
 
 class EcgDataService extends ChangeNotifier {
   static const _channel = MethodChannel('com.example.health/ecg');
+  static const _baseUrl = 'http://35.216.60.242:9101';
+
+  // ECG Founder 분석 결과 캐시 (txtPath → '정상'/'이상 소견 의심')
+  final Map<String, String> _diagnosisResults = {};
+
+  void updateDiagnosisResult(String txtPath, String result) {
+    _diagnosisResults[txtPath] = result;
+    notifyListeners();
+  }
+
+  String diagnosisResultFor(EcgEntry entry) =>
+      _diagnosisResults[entry.txtPath] ?? entry.result;
 
   EcgDataService() {
     loadInitialData().then((_) => loadFromLocalFiles());
@@ -281,13 +296,8 @@ class EcgDataService extends ChangeNotifier {
   }
 
   Future<void> loadFromLocalFiles() async {
-    final Directory dir;
-    if (Platform.isAndroid) {
-      dir = Directory('/data/user/0/com.example.xalute/app_flutter');
-    } else {
-      final docDir = await getApplicationDocumentsDirectory();
-      dir = docDir;
-    }
+    final docDir = await getApplicationDocumentsDirectory();
+    final dir = docDir;
     if (!dir.existsSync()) return;
 
     final files = dir.listSync();
@@ -306,8 +316,12 @@ class EcgDataService extends ChangeNotifier {
         final resultStr = parts[2].replaceAll('.txt', '');
 
         final timestamp = DateTime.fromMillisecondsSinceEpoch(int.parse(timestampStr));
-        final result = resultStr == 'abnormal' ? '이상 소견 의심' : '정상';
-        final color = result == '이상 소견 의심' ? const Color(0xFFFB755B) : Colors.grey[700]!;
+        final result = resultStr == 'normal' ? '정상'
+            : resultStr == 'abnormal' ? '이상 소견 의심'
+            : '분석 중';
+        final color = resultStr == 'normal' ? Colors.grey[700]!
+            : resultStr == 'abnormal' ? const Color(0xFFFB755B)
+            : Colors.grey;
         final txtContent = await file.readAsString();
 
         final entry = EcgEntry(
@@ -324,5 +338,174 @@ class EcgDataService extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  Future<void> fetchFromServer() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final token = await user.getIdToken();
+
+    final response = await http.post(
+      Uri.parse('$_baseUrl/query/ecgData'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'page': 1,
+        'limit': 100,
+        'uid': {'eq': user.uid},
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      debugPrint('❌ ECG 서버 조회 실패: ${response.statusCode}');
+      return;
+    }
+
+    final decoded = jsonDecode(response.body);
+    final list = decoded is List
+        ? decoded
+        : (decoded as Map<String, dynamic>)['data'] as List<dynamic>? ?? [];
+    final dir = await getApplicationDocumentsDirectory();
+
+    for (final item in list) {
+      final createdAt = DateTime.parse(item['createdAt'] as String).toLocal();
+      final abnormal = (item['abnormal'] as num?)?.toInt() ?? -1;
+      final insertId = item['insertId'] as String? ?? item['id'] as String? ?? '';
+
+      final resultKey = abnormal == 0 ? 'normal' : abnormal == 1 ? 'abnormal' : 'unknown';
+      final result = abnormal == 0 ? '정상' : abnormal == 1 ? '이상 소견 의심' : '분석 중';
+      final color = abnormal == 0 ? Colors.grey[700]!
+          : abnormal == 1 ? const Color(0xFFFB755B)
+          : Colors.grey;
+
+      final timestampStr = DateFormat('yyyyMMddHHmmss').format(createdAt);
+      final txtPath = '${dir.path}/ecg_${timestampStr}_$resultKey.txt';
+      final jsonPath = '${dir.path}/ecg_${timestampStr}_$resultKey.json';
+
+      // 이미 로컬 파일로 로드된 항목이면 스킵
+      final alreadyLoaded = _entries.any((e) {
+        final diff = e.dateTime.difference(createdAt).abs();
+        return diff.inSeconds < 60;
+      });
+      if (alreadyLoaded) continue;
+
+      // data 필드: 배열 / JSON 문자열 / GCS URL 세 가지 케이스 처리
+      final rawDataRaw = item['data'];
+      List<dynamic>? rawData;
+      if (rawDataRaw is List) {
+        rawData = rawDataRaw;
+      } else if (rawDataRaw is String) {
+        if (rawDataRaw.startsWith('http')) {
+          try {
+            final gcsRes = await http.get(Uri.parse(rawDataRaw));
+            if (gcsRes.statusCode == 200) {
+              rawData = jsonDecode(gcsRes.body) as List<dynamic>;
+            }
+          } catch (e) {
+            debugPrint('⚠️ GCS 데이터 다운로드 실패: $e');
+          }
+        } else {
+          try {
+            rawData = jsonDecode(rawDataRaw) as List<dynamic>;
+          } catch (_) {}
+        }
+      }
+      String content = '';
+      if (rawData != null && rawData.isNotEmpty) {
+        final buffer = StringBuffer();
+        final firstTs = (rawData[0] as List<dynamic>)[1] as num;
+        final isUnixMs = firstTs > 1e12;
+        final isUnixSec = !isUnixMs && firstTs > 1e9;
+        for (int i = 0; i < rawData.length; i++) {
+          if (i > 0) buffer.write(' ');
+          final point = rawData[i] as List<dynamic>;
+          final ts = (point[1] as num);
+          final double timeSeconds;
+          if (isUnixMs) {
+            timeSeconds = (ts - firstTs) / 1000.0;
+          } else if (isUnixSec) {
+            timeSeconds = (ts - firstTs).toDouble();
+          } else {
+            timeSeconds = ts.toDouble();
+          }
+          buffer.write('(${point[0]}, $timeSeconds)');
+        }
+        content = buffer.toString();
+        if (!File(txtPath).existsSync()) {
+          await File(txtPath).writeAsString(content);
+          await File(jsonPath).writeAsString('{}');
+        }
+      }
+
+      _entries.add(EcgEntry(
+        dateTime: createdAt,
+        result: result,
+        color: color,
+        content: content,
+        txtPath: File(txtPath).existsSync() ? txtPath : '',
+        jsonPath: File(jsonPath).existsSync() ? jsonPath : '',
+        deviceType: 'Server',
+      ));
+
+      debugPrint('✅ 서버 ECG 항목 추가: $insertId ($createdAt)');
+    }
+
+    _entries.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+    notifyListeners();
+  }
+
+  Future<void> saveToServer(String fileContent, String resultKey, int timestampMs) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final token = await user.getIdToken();
+
+    // "(voltage, time) ..." 포맷 파싱
+    final regex = RegExp(r'\(([^,]+),\s*([^)]+)\)');
+    final matches = regex.allMatches(fileContent);
+    final dataPoints = matches.map((m) => [
+      double.tryParse(m.group(1)!.trim()) ?? 0.0,
+      double.tryParse(m.group(2)!.trim()) ?? 0.0,
+    ]).toList();
+
+    if (dataPoints.isEmpty) return;
+
+    final effectiveDateTime = DateTime.fromMillisecondsSinceEpoch(timestampMs).toUtc();
+
+    final body = jsonEncode({
+      'entry': [
+        {
+          'resource': {
+            'effectiveDateTime': effectiveDateTime.toIso8601String(),
+            'component': [
+              {
+                'valueSampledData': {
+                  'origin': {'value': 0},
+                  'dimension': 1,
+                  'period': 2,
+                  'data': dataPoints,
+                }
+              }
+            ]
+          }
+        }
+      ]
+    });
+
+    final response = await http.post(
+      Uri.parse('$_baseUrl/mutation/addEcgData'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: body,
+    );
+
+    debugPrint(response.statusCode == 200 || response.statusCode == 201
+        ? '✅ ECG 서버 저장 완료'
+        : '❌ ECG 서버 저장 실패: ${response.statusCode}');
   }
 }

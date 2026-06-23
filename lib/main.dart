@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'screens/ecg_data_service.dart';
 import 'screens/ecg_page.dart';
@@ -14,8 +13,9 @@ import 'screens/api_client.dart';
 import 'screens/login_page.dart';
 import 'screens/setting_page.dart';
 import 'screens/ecg_detail_page.dart';
-import 'screens/survey_page.dart';
 import 'screens/vital_signs_service.dart';
+import 'screens/samsung_health_service.dart';
+import 'screens/daily_report_store.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,12 +39,20 @@ void main() async {
   await ecgService.loadInitialData();
 
   final vitalSignsService = VitalSignsService();
+  final samsungHealthService = SamsungHealthService();
+
+  final dailyReportStore = DailyReportStore();
+  await dailyReportStore.load();
+  vitalSignsService.dailyStore = dailyReportStore;
+  samsungHealthService.dailyStore = dailyReportStore;
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: ecgService),
         ChangeNotifierProvider.value(value: vitalSignsService),
+        ChangeNotifierProvider.value(value: samsungHealthService),
+        ChangeNotifierProvider.value(value: dailyReportStore),
       ],
       child: const HealthApp(),
     ),
@@ -58,9 +66,16 @@ void main() async {
       final context = navigatorKey.currentContext!;
       final ecgService = Provider.of<EcgDataService>(context, listen: false);
       await preloadSavedEcgFiles(ecgService);
+      ecgService.fetchFromServer()
+          .catchError((e) => debugPrint('⚠️ ECG 서버 조회 실패: $e'));
     } else {
       debugPrint("🍎 iOS 환경 - HealthKit 바이탈 사인 초기화");
       setupIosVitalSigns();
+
+      final context = navigatorKey.currentContext!;
+      final ecgService = Provider.of<EcgDataService>(context, listen: false);
+      ecgService.fetchFromServer()
+          .catchError((e) => debugPrint('⚠️ ECG 서버 조회 실패: $e'));
     }
   });
 }
@@ -91,6 +106,19 @@ void setupWatchListener() {
       final Map<String, dynamic> resultJson = jsonDecode(data['result_json']);
 
       await saveReceivedEcg(fileContent, result, timestamp, resultJson);
+
+      // 서버 저장 (fire-and-forget)
+      try {
+        final ctx = navigatorKey.currentContext!;
+        final ecgSvc = Provider.of<EcgDataService>(ctx, listen: false);
+        final resultKey = result.toLowerCase() == 'normal' ? 'normal'
+            : result.toLowerCase() == 'abnormal' ? 'abnormal'
+            : 'unknown';
+        ecgSvc.saveToServer(fileContent, resultKey, timestamp)
+            .catchError((e) => debugPrint('⚠️ ECG 서버 저장 실패: $e'));
+      } catch (e) {
+        debugPrint('⚠️ ECG 서버 저장 초기화 실패: $e');
+      }
 
       debugPrint("📈 R-peaks: ${resultJson['result']['r_peaks']}");
       debugPrint("📉 distance_from_median: ${resultJson['result']['distance_from_median']}");
@@ -181,18 +209,24 @@ Future<void> saveReceivedEcg(
     DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal(),
   );
 
-  final fileName = 'ecg_${timestampStr}_$result.txt';
+  final resultKey = result.toLowerCase() == 'normal' ? 'normal'
+      : result.toLowerCase() == 'abnormal' ? 'abnormal'
+      : 'unknown';
+
+  final fileName = 'ecg_${timestampStr}_$resultKey.txt';
   final file = File('${dir.path}/$fileName');
   await file.writeAsString(content);
   debugPrint("✅ ECG 텍스트 저장 완료: ${file.path}");
 
-  final jsonFileName = 'ecg_${timestampStr}_$result.json';
+  final jsonFileName = 'ecg_${timestampStr}_$resultKey.json';
   final jsonFile = File('${dir.path}/$jsonFileName');
   await jsonFile.writeAsString(jsonEncode(resultJson));
   debugPrint("✅ 분석 결과 JSON 저장 완료: ${jsonFile.path}");
 
   final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal();
-  final mappedResult = result.toLowerCase() == 'normal' ? '정상' : '이상 소견 의심';
+  final mappedResult = resultKey == 'normal' ? '정상'
+      : resultKey == 'abnormal' ? '이상 소견 의심'
+      : '분석 중';
 
   final context = navigatorKey.currentContext!;
   final ecgService = Provider.of<EcgDataService>(context, listen: false);
@@ -223,7 +257,7 @@ Future<void> preloadSavedEcgFiles(EcgDataService service) async {
 
     final fileName = file.uri.pathSegments.last;
 
-    if (!RegExp(r'^ecg_\d{14}_(normal|abnormal)\.txt$').hasMatch(fileName)) {
+    if (!RegExp(r'^ecg_\d{14}_(normal|abnormal|unknown)\.txt$').hasMatch(fileName)) {
       debugPrint("⚠️ 무시된 파일: $fileName");
       continue;
     }
@@ -248,8 +282,12 @@ Future<void> preloadSavedEcgFiles(EcgDataService service) async {
 
       final resultCode = parts[2];
       debugPrint("⚠️ resultCode: $resultCode");
-      final result = resultCode == 'normal' ? '정상' : '이상 소견 의심';
-      final color = result == '정상' ? Colors.green : const Color(0xFFFB755B);
+      final result = resultCode == 'normal' ? '정상'
+          : resultCode == 'abnormal' ? '이상 소견 의심'
+          : '분석 중';
+      final color = resultCode == 'normal' ? Colors.green
+          : resultCode == 'abnormal' ? const Color(0xFFFB755B)
+          : Colors.grey;
       final content = await file.readAsString();
 
       final isDuplicate = service.entries.any((entry) =>
@@ -299,7 +337,6 @@ class HealthApp extends StatelessWidget {
         '/ecg': (context) => const EcgPage(),
         '/login': (context) => const LoginPage(),
         '/settings': (context) => const SettingPage(),
-        '/survey' : (context) => const SurveyPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/ecgDetail') {
@@ -333,46 +370,27 @@ class HealthApp extends StatelessWidget {
 
 
 class _AuthCheckScreen extends StatelessWidget {
-  // 세션과 설문 상태를 동시에 체크하는 함수
-  Future<Map<String, dynamic>> _checkAllStatus() async {
+  Future<bool> _checkSession() async {
     final user = FirebaseAuth.instance.currentUser;
-    final prefs = await SharedPreferences.getInstance();
-
-    // 1. 로그인 여부 (기존 hasSession 로직)
-    bool hasSession = user != null;
-
-    // 2. 설문 완료 여부 (SharedPref에서 가져옴, 없으면 false)
-    bool isSurveyCompleted = prefs.getBool('isSurveyCompleted') ?? false;
-
-    return {
-      'hasSession': hasSession,
-      'isSurveyCompleted': isSurveyCompleted,
-    };
+    return user != null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _checkAllStatus(),
+    return FutureBuilder<bool>(
+      future: _checkSession(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        final bool hasSession = snapshot.data?['hasSession'] ?? false;
-        final bool isSurveyCompleted = snapshot.data?['isSurveyCompleted'] ?? false;
+        final bool hasSession = snapshot.data ?? false;
 
-        // [체크 1] 로그인 안 됨 -> 로그인 페이지
         if (!hasSession) {
           return const LoginPage();
         }
 
-        // [체크 2] 로그인은 됐는데 설문은 안 함 -> 설문 페이지
-        if (!isSurveyCompleted) {
-          return SurveyPage();
-        }
 
-        // [체크 3] 둘 다 완료 -> 메인 페이지
         return const MainTabPage();
       },
     );

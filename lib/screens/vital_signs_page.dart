@@ -1,12 +1,64 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'vital_signs_service.dart';
+import 'samsung_health_service.dart';
+import 'ecg_data_service.dart';
+import 'ecg_preview_card.dart';
+import 'main_tab_page.dart' as tabs;
+
+// ── 데모용 목업 ──────────────────────────────────────────────────────
+// 데모 이미지를 위해 실제 데이터가 없을 때 건강/에너지/수면 점수를
+// "말이 되는" 임의값으로 채운다. 운영 배포 시 false로 끄면 된다.
+const bool _demoMockSamsung = true;
+const _mockSamsungSummary = SamsungHealthSummary(
+  energyScore: 78,
+  sleepScore: 84,
+  totalSleepMinutes: 462, // 7시간 42분
+  deepSleepMinutes: 92,
+  remSleepMinutes: 110,
+  lightSleepMinutes: 240,
+  awakeDuringMinutes: 20,
+  sleepCycleCount: 5,
+  physicalRecoveryScore: 95,
+  mentalRecoveryScore: 90,
+  sleepHR: 56,
+);
+
+// 건강점수(웰니스) + 위험도 목업
+const _mockWellness = WellnessScore(
+  shortTerm: 86,
+  longTerm: 81,
+  usingPersonalBaseline: true,
+);
+final _mockNews2 = News2Result(
+  total: 0,
+  items: const {'spo2': 0, 'hr': 0, 'skinTemp': 0},
+  singleItem3: false,
+  action: News2Action.recordOnly,
+  measuredAt: DateTime(2026, 1, 1),
+);
+const double _mockSpo2 = 98;
+const double _mockHr = 72;
+const double _mockTemp = 33.2;
+
+// 오늘 날짜의 최신 ECG 측정 항목 (없으면 null)
+EcgEntry? _latestTodayEcg(EcgDataService s) {
+  final list = s.entriesForDay(DateTime.now());
+  if (list.isEmpty) return null;
+  list.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+  return list.first;
+}
 
 class VitalSignsPage extends StatefulWidget {
-  const VitalSignsPage({super.key});
+  /// 탭 활성화 시 자동 갱신을 위해 주입 (선택)
+  final tabs.TabController? controller;
+  final int? tabIndex;
+
+  const VitalSignsPage({super.key, this.controller, this.tabIndex});
 
   @override
   State<VitalSignsPage> createState() => _VitalSignsPageState();
@@ -15,42 +67,133 @@ class VitalSignsPage extends StatefulWidget {
 class _VitalSignsPageState extends State<VitalSignsPage> {
   bool _isLoading = false;
 
-  Future<void> _handleLoadButton() async {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller?.addListener(_onTabChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.controller?.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (widget.controller?.index == widget.tabIndex) {
+      _refresh();
+    }
+  }
+
+  // 일일 리포트 진입/탭 시 바이탈 + 삼성헬스를 조용히(다이얼로그 없이) 갱신
+  Future<void> _refresh() async {
+    if (_isLoading || !mounted) return;
     setState(() => _isLoading = true);
     try {
-      await Provider.of<VitalSignsService>(context, listen: false)
-          .fetchVitalSigns();
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      if (e.code == 'NO_DATA') {
+      await Future.wait([
+        Provider.of<VitalSignsService>(context, listen: false)
+            .fetchVitalSigns()
+            .catchError((_) {}),
+        if (Platform.isAndroid)
+          Provider.of<SamsungHealthService>(context, listen: false)
+              .fetchSummary()
+              .catchError((_) {}),
+      ]);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<String> _getIdToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('로그인이 필요합니다');
+    final token = await user.getIdToken();
+    if (token == null) throw Exception('토큰 발급 실패');
+    return token;
+  }
+
+  // 리포트 화면에서 ECG 측정 트리거 (Android: 워치 앱 실행 / iOS: HealthKit 조회)
+  Future<void> _handleMeasure() async {
+    if (Platform.isAndroid) {
+      const platform = MethodChannel('com.example.xalute/watch');
+      try {
+        final bool isConnected =
+            await platform.invokeMethod('isWatchConnected');
+        if (!mounted) return;
+        if (!isConnected) {
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              content: const Text('워치와의 연결을 확인해주세요.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('확인')),
+              ],
+            ),
+          );
+          return;
+        }
+
+        final ecg = Provider.of<EcgDataService>(context, listen: false);
+        final name = ecg.userName;
+        final birthDate = ecg.birthDate ?? '';
+        final token = await _getIdToken();
+        if (!mounted) return;
+
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('측정 데이터 없음', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: const Text(
-              '최근 24시간 내 바이탈 데이터가 없습니다.\n\nApple Watch에서 산소포화도, 심박수, 피부 온도를 측정한 후 다시 조회해 주세요.',
-            ),
+          builder: (dctx) => AlertDialog(
+            content: const Text('워치에서 ECG 측정을 진행하시겠습니까?'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('확인', style: TextStyle(color: Color(0xFFFB755B))),
+                onPressed: () async {
+                  Navigator.pop(dctx);
+                  try {
+                    await platform.invokeMethod('launchWatchApp', {
+                      'name': name,
+                      'birthDate': birthDate,
+                      'token': token,
+                    });
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('워치 앱 실행됨')));
+                    }
+                  } catch (e) {
+                    debugPrint('워치 앱 실행 실패: $e');
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('워치 앱 실행 실패: $e')));
+                    }
+                  }
+                },
+                child: const Text('확인'),
               ),
+              TextButton(
+                  onPressed: () => Navigator.pop(dctx),
+                  child: const Text('취소')),
             ],
           ),
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('데이터 조회 실패: ${e.message ?? e.code}')),
-        );
+      } on PlatformException catch (e) {
+        debugPrint('플랫폼 오류: ${e.message}');
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('데이터 조회 실패: $e')));
+    } else {
+      // iOS: HealthKit에서 ECG 조회
+      setState(() => _isLoading = true);
+      try {
+        await Provider.of<EcgDataService>(context, listen: false).fetchEcgData();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('데이터 조회 실패: $e')));
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -60,7 +203,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text(
-          '바이탈 사인',
+          '일일 리포트',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         backgroundColor: Colors.white,
@@ -68,62 +211,27 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isLoading ? null : _handleMeasure,
+        backgroundColor: const Color(0xFFFB755B),
+        icon: const Icon(Icons.monitor_heart, color: Colors.white),
+        label: Text(
+          Platform.isIOS ? 'ECG 조회' : 'ECG 측정',
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
       body: Stack(
         children: [
           Consumer<VitalSignsService>(
             builder: (context, service, _) {
-              if (!service.hasData) {
+              final todayEcg =
+                  _latestTodayEcg(Provider.of<EcgDataService>(context));
+              if (!service.hasData && todayEcg == null && !_demoMockSamsung) {
                 return _EmptyState();
               }
-              return _DataView(service: service);
+              return _DataView(service: service, todayEcg: todayEcg);
             },
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFFF8F9FA).withOpacity(0),
-                    const Color(0xFFF8F9FA),
-                  ],
-                ),
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFB755B),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 4,
-                  ),
-                  onPressed: _isLoading ? null : _handleLoadButton,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : const Text(
-                          '데이터 조회',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
-              ),
-            ),
           ),
           if (_isLoading)
             AbsorbPointer(
@@ -137,7 +245,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
                     CircularProgressIndicator(color: Color(0xFFFB755B)),
                     SizedBox(height: 16),
                     Text(
-                      '바이탈 데이터를 조회하고 있어요\n잠시만 기다려주세요',
+                      '일일 리포트를 갱신하고 있어요\n잠시만 기다려주세요',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
@@ -182,18 +290,46 @@ class _EmptyState extends StatelessWidget {
 
 class _DataView extends StatelessWidget {
   final VitalSignsService service;
+  final EcgEntry? todayEcg;
 
-  const _DataView({required this.service});
+  const _DataView({required this.service, this.todayEcg});
 
   @override
   Widget build(BuildContext context) {
     final timeStr = service.lastUpdated != null
         ? DateFormat('yyyy.MM.dd HH:mm').format(service.lastUpdated!)
         : '-';
+    final realSummary = Platform.isAndroid
+        ? Provider.of<SamsungHealthService>(context).summary
+        : null;
+    final shSummary =
+        realSummary ?? (_demoMockSamsung ? _mockSamsungSummary : null);
+
+    // 건강점수: 실제값 우선, 없으면 데모 목업
+    final realWellness = service.wellnessScore;
+    final useDemoWellness = realWellness == null && _demoMockSamsung;
+    final wellness = realWellness ?? (_demoMockSamsung ? _mockWellness : null);
+    final double? wSpo2 = realWellness != null
+        ? (service.spo2Data.isNotEmpty ? service.spo2Avg : null)
+        : (useDemoWellness ? _mockSpo2 : null);
+    final double? wHr = realWellness != null
+        ? (service.heartRateData.isNotEmpty ? service.hrAvg : null)
+        : (useDemoWellness ? _mockHr : null);
+    final double? wTemp = realWellness != null
+        ? (service.skinTempData.isNotEmpty ? service.tempAvg : null)
+        : (useDemoWellness ? _mockTemp : null);
+    final News2Result? wNews2 =
+        realWellness != null ? service.lastNews2Result : (useDemoWellness ? _mockNews2 : null);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
+        // ECG 미리보기 (plot + 의심 질환) — 최상단
+        if (todayEcg != null) ...[
+          TodayEcgCard(entry: todayEcg!),
+          const SizedBox(height: 14),
+        ],
+
         Row(
           children: [
             const Icon(Icons.access_time, size: 14, color: Colors.grey),
@@ -206,63 +342,23 @@ class _DataView extends StatelessWidget {
         ),
         const SizedBox(height: 14),
 
-        if (service.wellnessScore != null) ...[
-          _WellnessScoreCard(score: service.wellnessScore!),
+        if (wellness != null) ...[
+          _WellnessScoreCard(
+            score: wellness,
+            spo2: wSpo2,
+            hr: wHr,
+            temp: wTemp,
+            news2: wNews2,
+          ),
           const SizedBox(height: 14),
         ],
 
-        if (service.lastNews2Result != null) ...[
-          _News2Card(result: service.lastNews2Result!),
+        if (shSummary != null) ...[
+          _EnergyScoreCard(summary: shSummary),
+          const SizedBox(height: 14),
+          _SleepScoreCard(summary: shSummary),
           const SizedBox(height: 14),
         ],
-
-        _VitalCard(
-          title: '산소포화도 (SpO2)',
-          icon: Icons.air,
-          iconColor: const Color(0xFF4E9AF1),
-          currentValue: '${service.spo2Last}%',
-          unit: '%',
-          avg: service.spo2Avg,
-          min: service.spo2Min.toDouble(),
-          max: service.spo2Max.toDouble(),
-          dataPoints: service.spo2Data.map((e) => e.toDouble()).toList(),
-          lineColor: const Color(0xFF4E9AF1),
-          minY: (service.spo2Min - 3).toDouble().clamp(80, 94),
-          maxY: 101,
-        ),
-        const SizedBox(height: 14),
-
-        _VitalCard(
-          title: '심박수 (Heart Rate)',
-          icon: Icons.favorite,
-          iconColor: const Color(0xFFFB755B),
-          currentValue: '${service.hrLast}',
-          unit: 'bpm',
-          avg: service.hrAvg,
-          min: service.hrMin.toDouble(),
-          max: service.hrMax.toDouble(),
-          dataPoints: service.heartRateData.map((e) => e.toDouble()).toList(),
-          lineColor: const Color(0xFFFB755B),
-          minY: (service.hrMin - 5).toDouble().clamp(30, 50),
-          maxY: (service.hrMax + 5).toDouble(),
-        ),
-        const SizedBox(height: 14),
-
-        _VitalCard(
-          title: '피부 온도 (Skin Temp)',
-          icon: Icons.thermostat,
-          iconColor: const Color(0xFFFF9500),
-          currentValue: service.tempLast.toStringAsFixed(1),
-          unit: '°C',
-          avg: service.tempAvg,
-          min: service.tempMin,
-          max: service.tempMax,
-          dataPoints: service.skinTempData,
-          lineColor: const Color(0xFFFF9500),
-          minY: (service.tempMin - 1).clamp(25.0, 30.0),
-          maxY: service.tempMax + 1,
-          isDouble: true,
-        ),
       ],
     );
   }
@@ -270,10 +366,27 @@ class _DataView extends StatelessWidget {
 
 // ─── Wellness Score Card ─────────────────────────────────────────────
 
-class _WellnessScoreCard extends StatelessWidget {
+class _WellnessScoreCard extends StatefulWidget {
   final WellnessScore score;
+  final double? spo2; // 평균값 (없으면 null)
+  final double? hr;
+  final double? temp;
+  final News2Result? news2;
 
-  const _WellnessScoreCard({required this.score});
+  const _WellnessScoreCard({
+    required this.score,
+    this.spo2,
+    this.hr,
+    this.temp,
+    this.news2,
+  });
+
+  @override
+  State<_WellnessScoreCard> createState() => _WellnessScoreCardState();
+}
+
+class _WellnessScoreCardState extends State<_WellnessScoreCard> {
+  static const _accent = Color(0xFF34C759);
 
   Color _scoreColor(double s) {
     if (s >= 80) return const Color(0xFF34C759);
@@ -282,296 +395,175 @@ class _WellnessScoreCard extends StatelessWidget {
     return const Color(0xFFFF3B30);
   }
 
-  String _scoreLabel(double s) {
-    if (s >= 80) return '좋음';
-    if (s >= 60) return '양호';
-    if (s >= 40) return '주의';
-    return '나쁨';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF34C759).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.spa, color: Color(0xFF34C759), size: 20),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                '건강점수 (Wellness Score)',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const Spacer(),
-              if (!score.usingPersonalBaseline)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Text(
-                    '인구 기준',
-                    style: TextStyle(fontSize: 10, color: Colors.orange.shade700),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _ScoreCircle(
-                  label: '단기 (24h)',
-                  score: score.shortTerm,
-                  color: _scoreColor(score.shortTerm),
-                  statusLabel: _scoreLabel(score.shortTerm),
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 80,
-                color: Colors.grey.shade100,
-              ),
-              Expanded(
-                child: _ScoreCircle(
-                  label: '장기 (28일)',
-                  score: score.longTerm,
-                  color: _scoreColor(score.longTerm),
-                  statusLabel: _scoreLabel(score.longTerm),
-                ),
-              ),
-            ],
-          ),
-          if (!score.usingPersonalBaseline) ...[
-            const SizedBox(height: 10),
-            Text(
-              '7일 이상 데이터 누적 시 개인 baseline이 적용됩니다',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ScoreCircle extends StatelessWidget {
-  final String label;
-  final double score;
-  final Color color;
-  final String statusLabel;
-
-  const _ScoreCircle({
-    required this.label,
-    required this.score,
-    required this.color,
-    required this.statusLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 80,
-              height: 80,
-              child: CircularProgressIndicator(
-                value: score / 100.0,
-                strokeWidth: 7,
-                backgroundColor: color.withValues(alpha: 0.12),
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-                strokeCap: StrokeCap.round,
-              ),
-            ),
-            Text(
-              score.round().toString(),
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w700,
-                color: color,
-                height: 1.0,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        const SizedBox(height: 2),
-        Text(
-          statusLabel,
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── NEWS2 Card ──────────────────────────────────────────────────────
-
-class _News2Card extends StatelessWidget {
-  final News2Result result;
-
-  const _News2Card({required this.result});
-
-  Color get _actionColor {
-    switch (result.action) {
+  Color _actionColor(News2Action a) {
+    switch (a) {
       case News2Action.recordOnly:     return const Color(0xFF34C759);
-      case News2Action.observe24h:    return const Color(0xFFFF9500);
+      case News2Action.observe24h:     return const Color(0xFFFF9500);
       case News2Action.immediateAlert: return const Color(0xFFFF3B30);
     }
   }
 
-  IconData get _actionIcon {
-    switch (result.action) {
+  IconData _actionIcon(News2Action a) {
+    switch (a) {
       case News2Action.recordOnly:     return Icons.check_circle_outline;
-      case News2Action.observe24h:    return Icons.schedule;
+      case News2Action.observe24h:     return Icons.schedule;
       case News2Action.immediateAlert: return Icons.warning_amber_rounded;
     }
   }
 
+  Widget _buildRiskSection(News2Result result) {
+    final color = _actionColor(result.action);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(_actionIcon(result.action), color: color, size: 18),
+            const SizedBox(width: 6),
+            const Text(
+              '건강 위험도',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                result.action.label,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${result.total}',
+              style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, color: color, height: 1.0),
+            ),
+            const SizedBox(width: 4),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 5),
+              child: Text('점', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500)),
+            ),
+            const Spacer(),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (result.items.containsKey('spo2'))
+                  _News2ItemRow(label: 'SpO2', score: result.items['spo2']!),
+                if (result.items.containsKey('hr'))
+                  _News2ItemRow(label: '심박수', score: result.items['hr']!),
+                if (result.items.containsKey('skinTemp'))
+                  _News2ItemRow(label: '체온', score: result.items['skinTemp']!),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 14, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  result.action.description,
+                  style: TextStyle(fontSize: 12, color: color),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(18),
+    final score = widget.score;
+
+    return _HealthCard(
+      icon: Icons.spa,
+      iconColor: _accent,
+      title: '건강점수',
+      subtitle: 'Vital Signs',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _actionColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(_actionIcon, color: _actionColor, size: 20),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                '건강 위험도',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _actionColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  result.action.label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: _actionColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${result.total}',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.w700,
-                  color: _actionColor,
-                  height: 1.0,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6),
-                child: Text(
-                  '점',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const Spacer(),
               Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (result.items.containsKey('spo2'))
-                    _News2ItemRow(label: 'SpO2', score: result.items['spo2']!),
-                  if (result.items.containsKey('hr'))
-                    _News2ItemRow(label: '심박수', score: result.items['hr']!),
-                  if (result.items.containsKey('skinTemp'))
-                    _News2ItemRow(label: '체온', score: result.items['skinTemp']!),
+                  _BigScoreCircle(
+                    score: score.shortTerm.round(),
+                    maxScore: 100,
+                    color: _scoreColor(score.shortTerm),
+                    label: '단기 24h',
+                  ),
+                  const SizedBox(height: 12),
+                  _BigScoreCircle(
+                    score: score.longTerm.round(),
+                    maxScore: 100,
+                    color: _scoreColor(score.longTerm),
+                    label: '장기 28일',
+                  ),
                 ],
               ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SubMetricRow(
+                      icon: Icons.air,
+                      label: 'SpO2',
+                      value: widget.spo2 != null ? '${widget.spo2!.round()}%' : '--',
+                      color: const Color(0xFF4E9AF1),
+                    ),
+                    _SubMetricRow(
+                      icon: Icons.favorite,
+                      label: '심박수',
+                      value: widget.hr != null ? '${widget.hr!.round()} bpm' : '--',
+                      color: const Color(0xFFFB755B),
+                    ),
+                    _SubMetricRow(
+                      icon: Icons.thermostat,
+                      label: '체온',
+                      value: widget.temp != null ? '${widget.temp!.toStringAsFixed(1)}°C' : '--',
+                      color: const Color(0xFFFF9500),
+                    ),
+                    _SubMetricRow(
+                      icon: Icons.groups,
+                      label: 'baseline',
+                      value: score.usingPersonalBaseline ? '개인 기준' : '인구 기준',
+                      note: score.usingPersonalBaseline ? '개인 baseline 적용 중' : '7일 누적 시 개인화',
+                      color: score.usingPersonalBaseline
+                          ? const Color(0xFF34C759)
+                          : const Color(0xFFFF9500),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: _actionColor.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 14, color: _actionColor),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    result.action.description,
-                    style: TextStyle(fontSize: 12, color: _actionColor),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          if (widget.news2 != null) ...[
+            const SizedBox(height: 14),
+            Divider(height: 1, color: Colors.grey.shade200),
+            const SizedBox(height: 14),
+            _buildRiskSection(widget.news2!),
+          ],
         ],
       ),
     );
@@ -622,41 +614,210 @@ class _News2ItemRow extends StatelessWidget {
   }
 }
 
-// ─── Vital Sign Detail Card ──────────────────────────────────────────
+// ─── Energy Score Card ────────────────────────────────────────────────
 
-class _VitalCard extends StatelessWidget {
-  final String title;
+class _EnergyScoreCard extends StatefulWidget {
+  final SamsungHealthSummary summary;
+  const _EnergyScoreCard({required this.summary});
+
+  @override
+  State<_EnergyScoreCard> createState() => _EnergyScoreCardState();
+}
+
+class _EnergyScoreCardState extends State<_EnergyScoreCard> {
+  static const _accent = Color(0xFF5E9BF0);
+
+  Color _scoreColor(double s) {
+    if (s >= 80) return const Color(0xFF34C759);
+    if (s >= 60) return const Color(0xFF5E9BF0);
+    if (s >= 40) return const Color(0xFFFF9500);
+    return const Color(0xFFFF3B30);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final score = widget.summary.energyScore;
+    final sleepHR = widget.summary.sleepHR;
+    final totalSleep = widget.summary.totalSleepMinutes;
+
+    return _HealthCard(
+      icon: Icons.bolt,
+      iconColor: _accent,
+      title: '에너지 점수',
+      subtitle: 'Samsung Health',
+      child: Row(
+        children: [
+          // 큰 점수 원형
+          _BigScoreCircle(
+            score: score?.toInt(),
+            maxScore: 100,
+            color: score != null ? _scoreColor(score) : Colors.grey.shade300,
+            label: '오늘',
+          ),
+          const SizedBox(width: 20),
+          // 서브 메트릭 목록 (실제 측정 value)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SubMetricRow(
+                  icon: Icons.directions_run,
+                  label: '활동',
+                  value: '어제 활동량 기반',
+                  color: const Color(0xFF34C759),
+                ),
+                _SubMetricRow(
+                  icon: Icons.bedtime,
+                  label: '수면',
+                  value: totalSleep != null ? widget.summary.totalSleepStr : '--',
+                  color: const Color(0xFF5E9BF0),
+                ),
+                _SubMetricRow(
+                  icon: Icons.favorite,
+                  label: '수면 중 HR',
+                  value: sleepHR != null ? '${sleepHR.toStringAsFixed(0)} bpm' : '--',
+                  color: const Color(0xFFFB755B),
+                ),
+                _SubMetricRow(
+                  icon: Icons.waves,
+                  label: '수면 중 HRV',
+                  value: '--',
+                  note: 'SDK 1.1.0 미지원',
+                  color: const Color(0xFFFF9500),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Sleep Score Card ─────────────────────────────────────────────────
+
+class _SleepScoreCard extends StatefulWidget {
+  final SamsungHealthSummary summary;
+  const _SleepScoreCard({required this.summary});
+
+  @override
+  State<_SleepScoreCard> createState() => _SleepScoreCardState();
+}
+
+class _SleepScoreCardState extends State<_SleepScoreCard> {
+  static const _accent = Color(0xFF7B61FF);
+
+  Color _scoreColor(int s) {
+    if (s >= 80) return const Color(0xFF34C759);
+    if (s >= 60) return const Color(0xFF7B61FF);
+    if (s >= 40) return const Color(0xFFFF9500);
+    return const Color(0xFFFF3B30);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.summary;
+    final total = s.totalSleepMinutes ?? 0;
+    final deep = s.deepSleepMinutes ?? 0;
+    final rem = s.remSleepMinutes ?? 0;
+    final light = s.lightSleepMinutes ?? 0;
+    final awake = s.awakeDuringMinutes ?? 0;
+    final deepPct = total > 0 ? deep / total * 100 : 0.0;
+    final remPct = total > 0 ? rem / total * 100 : 0.0;
+
+    return _HealthCard(
+      icon: Icons.bedtime,
+      iconColor: _accent,
+      title: '수면 점수',
+      subtitle: 'Samsung Health',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _BigScoreCircle(
+                score: s.sleepScore,
+                maxScore: 100,
+                color: s.sleepScore != null ? _scoreColor(s.sleepScore!) : Colors.grey.shade300,
+                label: '어젯밤',
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 수면 단계 시각화 바
+                    if (total > 0) ...[
+                      _SleepStageBar(
+                        deep: deep, rem: rem, light: light, awake: awake,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    Text(
+                      '총 수면  ${s.totalSleepStr}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '딥슬립 ${deepPct.toStringAsFixed(0)}%  ·  REM ${remPct.toStringAsFixed(0)}%  ·  주기 ${s.sleepCycleCount ?? 0}회',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // 5개 서브컴포넌트 — 실제 측정 value
+          _SleepSubRow(
+            label: '총 수면 시간',
+            value: s.totalSleepStr,
+            color: const Color(0xFF5E9BF0),
+          ),
+          _SleepSubRow(
+            label: '수면 주기',
+            value: '${s.sleepCycleCount ?? 0}회',
+            color: _accent,
+          ),
+          _SleepSubRow(
+            label: '깨거나 뒤척임',
+            value: '$awake분',
+            color: const Color(0xFFFF9500),
+          ),
+          _SleepSubRow(
+            label: '신체 회복 (딥슬립)',
+            value: '${deepPct.toStringAsFixed(0)}% · $deep분',
+            color: const Color(0xFF34C759),
+          ),
+          _SleepSubRow(
+            label: '정신 회복 (REM)',
+            value: '${remPct.toStringAsFixed(0)}% · $rem분',
+            color: const Color(0xFFFB755B),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 공통 서브 위젯들 ─────────────────────────────────────────────────
+
+class _HealthCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
-  final String currentValue;
-  final String unit;
-  final double avg;
-  final double min;
-  final double max;
-  final List<double> dataPoints;
-  final Color lineColor;
-  final double minY;
-  final double maxY;
-  final bool isDouble;
+  final String title;
+  final String subtitle;
+  final Widget child;
 
-  const _VitalCard({
-    required this.title,
+  const _HealthCard({
     required this.icon,
     required this.iconColor,
-    required this.currentValue,
-    required this.unit,
-    required this.avg,
-    required this.min,
-    required this.max,
-    required this.dataPoints,
-    required this.lineColor,
-    required this.minY,
-    required this.maxY,
-    this.isDouble = false,
+    required this.title,
+    required this.subtitle,
+    required this.child,
   });
-
-  String _fmt(double v) =>
-      isDouble ? v.toStringAsFixed(1) : v.round().toString();
 
   @override
   Widget build(BuildContext context) {
@@ -687,91 +848,124 @@ class _VitalCard extends StatelessWidget {
                 child: Icon(icon, color: iconColor, size: 20),
               ),
               const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                currentValue,
-                style: TextStyle(
-                  fontSize: 40,
-                  fontWeight: FontWeight.w700,
-                  color: iconColor,
-                  height: 1.0,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 5),
-                child: Text(
-                  unit,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: iconColor.withValues(alpha: 0.8),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const Spacer(),
               Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _StatRow(label: '평균', value: '${_fmt(avg)} $unit'),
-                  _StatRow(label: '최저', value: '${_fmt(min)} $unit'),
-                  _StatRow(label: '최고', value: '${_fmt(max)} $unit'),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87)),
+                  Text(subtitle,
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
 
-          if (dataPoints.length >= 2)
+class _BigScoreCircle extends StatelessWidget {
+  final int? score;
+  final int maxScore;
+  final Color color;
+  final String label;
+
+  const _BigScoreCircle({
+    required this.score,
+    required this.maxScore,
+    required this.color,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = score != null ? score! / maxScore : 0.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
             SizedBox(
-              height: 80,
-              child: LineChart(
-                LineChartData(
-                  gridData: const FlGridData(show: false),
-                  titlesData: const FlTitlesData(show: false),
-                  borderData: FlBorderData(show: false),
-                  minY: minY,
-                  maxY: maxY,
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: dataPoints
-                          .asMap()
-                          .entries
-                          .map((e) => FlSpot(e.key.toDouble(), e.value))
-                          .toList(),
-                      isCurved: true,
-                      color: lineColor,
-                      barWidth: 2.5,
-                      isStrokeCapRound: true,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: lineColor.withValues(alpha: 0.1),
-                      ),
-                    ),
-                  ],
-                ),
+              width: 72,
+              height: 72,
+              child: CircularProgressIndicator(
+                value: ratio,
+                strokeWidth: 6,
+                backgroundColor: color.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                strokeCap: StrokeCap.round,
               ),
             ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  score != null ? '$score' : '--',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                    height: 1.0,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+      ],
+    );
+  }
+}
 
-          const SizedBox(height: 6),
-          Text(
-            '총 ${dataPoints.length}개 측정값',
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+class _SubMetricRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String? note;
+  final Color color;
+
+  const _SubMetricRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.note,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    Text(value,
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+                  ],
+                ),
+                if (note != null)
+                  Text(note!,
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+              ],
+            ),
           ),
         ],
       ),
@@ -779,30 +973,98 @@ class _VitalCard extends StatelessWidget {
   }
 }
 
-class _StatRow extends StatelessWidget {
+class _SleepSubRow extends StatelessWidget {
   final String label;
   final String value;
+  final Color color;
 
-  const _StatRow({required this.label, required this.value});
+  const _SleepSubRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            '$label  ',
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          Text(label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SleepStageBar extends StatelessWidget {
+  final int deep, rem, light, awake;
+
+  const _SleepStageBar({
+    required this.deep,
+    required this.rem,
+    required this.light,
+    required this.awake,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = (deep + rem + light + awake).toDouble();
+    if (total == 0) return const SizedBox.shrink();
+
+    Widget segment(int mins, Color color) => Expanded(
+          flex: mins,
+          child: Container(color: color, height: 8),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Row(
+            children: [
+              if (deep > 0) segment(deep, const Color(0xFF3478F6)),
+              if (rem > 0) segment(rem, const Color(0xFF7B61FF)),
+              if (light > 0) segment(light, const Color(0xFF5AC8FA)),
+              if (awake > 0) segment(awake, Colors.grey.shade300),
+            ],
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            _LegendDot(color: const Color(0xFF3478F6), label: '딥'),
+            _LegendDot(color: const Color(0xFF7B61FF), label: 'REM'),
+            _LegendDot(color: const Color(0xFF5AC8FA), label: '라이트'),
+            _LegendDot(color: Colors.grey.shade300, label: '각성'),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 2),
+          Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
         ],
       ),
     );

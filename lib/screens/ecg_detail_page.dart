@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'ecg_data_service.dart';
 
 class EcgDetailPage extends StatefulWidget {
   final String txtPath;
@@ -152,8 +154,9 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
 
         // 상태 업데이트
         if (mounted) {
+          final diagnoses = ecgResult['diagnoses'] as List<String>;
           setState(() {
-            highProbabilityDiagnoses = ecgResult['diagnoses'] as List<String>;
+            highProbabilityDiagnoses = diagnoses;
             final reconstructed = ecgResult['leads'] as List<List<FlSpot>>;
             for (int i = 1; i < 12; i++) {
               if (reconstructed[i].isNotEmpty) {
@@ -161,6 +164,12 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
               }
             }
           });
+          // ECG Founder 결과를 리스트 페이지에 반영
+          final diagnosisResult = diagnoses.isEmpty ? '정상' : '이상 소견 의심';
+          if (widget.txtPath.isNotEmpty) {
+            Provider.of<EcgDataService>(context, listen: false)
+                .updateDiagnosisResult(widget.txtPath, diagnosisResult);
+          }
         }
       }
 
@@ -444,14 +453,6 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                 children: [
                   const Text('날짜', style: TextStyle(fontWeight: FontWeight.bold)),
                   Text(DateFormat('yyyy.MM.dd (E) HH시 mm분', 'ko_KR').format(widget.timestamp)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('결과', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(widget.result),
                 ],
               ),
               const SizedBox(height: 8),

@@ -1,14 +1,11 @@
-/** Main **/
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'ecg_data_service.dart';
+import 'vital_signs_service.dart';
+import 'daily_report_store.dart';
 import '../main.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class EcgPage extends StatefulWidget {
   const EcgPage({super.key});
@@ -20,7 +17,6 @@ class EcgPage extends StatefulWidget {
 class _EcgPageState extends State<EcgPage> {
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
-  bool isLoading = false;
 
   @override
   void initState() {
@@ -49,110 +45,18 @@ class _EcgPageState extends State<EcgPage> {
     }
   }
 
-  Future<String> _getIdToken() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception("Not logged in");
-    }
-
-    final token = await user.getIdToken();
-    if (token == null) {
-      throw Exception("Failed to get ID token");
-    }
-
-    return token;
-  }
-
-  Future<SharedPreferences> getPrefs() async {
-    return await SharedPreferences.getInstance();
-  }
-
-  void _handleMeasureButton() async {
-    if (Platform.isAndroid) {
-      const platform = MethodChannel('com.example.xalute/watch');
-      try {
-        final bool isConnected = await platform.invokeMethod(
-            'isWatchConnected');
-        if (!isConnected) {
-          showDialog(
-            context: context,
-            builder: (context) =>
-                AlertDialog(
-                  content: const Text("워치와의 연결을 확인해주세요."),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context),
-                        child: const Text("확인"))
-                  ],
-                ),
-          );
-          return;
-        }
-
-        final ecgService = Provider.of<EcgDataService>(context, listen: false);
-        final name = ecgService.userName ?? "User";
-        final birthDate = ecgService.birthDate ?? "";
-        final phoneNumber = ecgService.phoneNumber ?? "";
-        final address = ecgService.address ?? "";
-        final token = await _getIdToken();
-
-        showDialog(
-          context: context,
-          builder: (context) =>
-              AlertDialog(
-                content: const Text("워치에서 ECG 측정을 진행하시겠습니까?"),
-                actions: [
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      try {
-                        await platform.invokeMethod('launchWatchApp', {
-                          'name': name,
-                          'birthDate': birthDate,
-                          'token': token,
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("워치 앱 실행됨")));
-                      } catch (e) {
-          // 콘솔에 상세 에러 로그 출력
-          debugPrint("에러 발생 상세 내용: $e");
-          if (context.mounted) { // context가 유효한지 확인하는 것이 권장됩니다.
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("워치 앱 실행 실패: ${e.toString()}")),
-            );
-          }
-        }
-                    },
-                    child: const Text("확인"),
-                  ),
-                  TextButton(onPressed: () => Navigator.pop(context),
-                      child: const Text("취소")),
-                ],
-              ),
-        );
-      } on PlatformException catch (e) {
-        debugPrint("플랫폼 오류: ${e.message}");
-      }
-    } else {
-      setState(() => isLoading = true);
-      try {
-        await Provider.of<EcgDataService>(context, listen: false)
-            .fetchEcgData();
-      } catch (e, stack) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('데이터 조회 실패: $e')));
-      } finally {
-        if (mounted) setState(() => isLoading = false);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final ecgService = Provider.of<EcgDataService>(context);
+    final vitalService = Provider.of<VitalSignsService>(context);
+    final dailyStore = Provider.of<DailyReportStore>(context);
+    final longTermScore = vitalService.wellnessScore?.longTerm;
+    final scoreText = longTermScore != null ? '${longTermScore.round()}점' : '--점';
     final selected = selectedDay ?? DateTime.now();
     final normalizedSelected = DateTime.utc(
         selected.year, selected.month, selected.day);
     final selectedResults = ecgService.entriesForDay(normalizedSelected);
+    final selectedReport = dailyStore.forDay(normalizedSelected);
     final monthResults = ecgService.entries
         .where((entry) =>
     entry.dateTime.year == focusedDay.year &&
@@ -201,7 +105,7 @@ class _EcgPageState extends State<EcgPage> {
                               Row(
                                 children: [
                                   Text(
-                                    "건강점수는 ${ecgService.totalScore}점",
+                                    "건강점수는 $scoreText",
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 24,
@@ -330,6 +234,7 @@ class _EcgPageState extends State<EcgPage> {
                       final today = DateTime.now();
                       final isToday = isSameDay(today, day);
                       return ecgService.statusMap.containsKey(normalized) ||
+                          dailyStore.forDay(normalized) != null ||
                           isToday;
                     },
                     calendarBuilders: CalendarBuilders(
@@ -422,6 +327,14 @@ class _EcgPageState extends State<EcgPage> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _DailyScoreSummary(
+                      day: normalizedSelected,
+                      report: selectedReport,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -429,8 +342,6 @@ class _EcgPageState extends State<EcgPage> {
                       children: selectedResults.map((entry) {
                         final formatted = DateFormat('M월 d일 HH시 mm분').format(
                             entry.dateTime);
-                        final isAbnormal = entry.result == '이상 소견 의심';
-
                         return InkWell(
                           onTap: () {
                             Navigator.pushNamed(
@@ -451,12 +362,12 @@ class _EcgPageState extends State<EcgPage> {
                                 Row(
                                   children: [
                                     Text(
-                                      entry.result,
+                                      ecgService.diagnosisResultFor(entry),
                                       style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                        color: isAbnormal ? const Color(
-                                            0xFFFB755B) : Colors.grey[700],
+                                        fontSize: 14,
+                                        color: ecgService.diagnosisResultFor(entry) == '이상 소견 의심'
+                                            ? const Color(0xFFFB755B)
+                                            : Colors.grey[600],
                                       ),
                                     ),
                                     const SizedBox(width: 4),
@@ -472,52 +383,133 @@ class _EcgPageState extends State<EcgPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFB755B),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: _handleMeasureButton,
-                        child: Text(
-                          Platform.isIOS ? "데이터 조회" : "측정 시작",
-                          style: const TextStyle(fontSize: 16,
-                              color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
           ),
-          if (isLoading)
-            AbsorbPointer(
-              absorbing: true,
-              child: Container(
-                color: Colors.black54,
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(
-                      color: Color(0xFFFB755B),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'ECG 데이터를 조회하고 있어요\n앱을 끄지 말고 잠시만 기다려주세요',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                  ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─── 일일 점수 요약 카드 (달력에서 선택한 날짜) ──────────────────────────
+
+class _DailyScoreSummary extends StatelessWidget {
+  final DateTime day;
+  final DailyReport? report;
+
+  const _DailyScoreSummary({required this.day, required this.report});
+
+  Color _scoreColor(num? s) {
+    if (s == null) return Colors.grey;
+    if (s >= 80) return const Color(0xFF34C759);
+    if (s >= 60) return const Color(0xFF30B0C7);
+    if (s >= 40) return const Color(0xFFFF9500);
+    return const Color(0xFFFF3B30);
+  }
+
+  Widget _metric(String label, String value, Color color, {String? sub, bool dim = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: dim ? Colors.grey.shade400 : color,
+          ),
+        ),
+        if (sub != null) ...[
+          const SizedBox(height: 1),
+          Text(sub, style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = report;
+    final boxDecoration = BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    );
+
+    if (r == null || r.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: boxDecoration,
+        child: Row(
+          children: [
+            Icon(Icons.bar_chart, size: 18, color: Colors.grey.shade400),
+            const SizedBox(width: 8),
+            Text(
+              '이 날의 점수 기록이 없어요',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: boxDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bar_chart, size: 18, color: Color(0xFFFB755B)),
+              const SizedBox(width: 8),
+              Text(
+                '${DateFormat('M월 d일').format(day)} 점수 요약',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _metric(
+                  '건강 점수',
+                  r.wellShort == null ? '--' : '${r.wellShort!.round()}점',
+                  _scoreColor(r.wellShort),
+                  dim: r.wellShort == null,
                 ),
               ),
-            ),
+              Expanded(
+                child: _metric(
+                  '에너지',
+                  r.energy == null ? '--' : '${r.energy!.round()}점',
+                  _scoreColor(r.energy),
+                  dim: r.energy == null,
+                ),
+              ),
+              Expanded(
+                child: _metric(
+                  '수면',
+                  r.sleep == null ? '--' : '${r.sleep}점',
+                  _scoreColor(r.sleep),
+                  dim: r.sleep == null,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

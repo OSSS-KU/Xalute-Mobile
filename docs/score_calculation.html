@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ko" xml:lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Xalute 점수 계산 방식</title>
+  <style>
+    html {
+      line-height: 1.5;
+      font-family: Georgia, serif;
+      font-size: 20px;
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      word-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 1em;
+      }
+    }
+    @media print {
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, 'Lucida Console', Consolas, monospace;
+      font-size: 85%;
+      margin: 0;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body {
+      font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+      font-size: 11pt;
+      line-height: 1.55;
+      color: #1a1a1a;
+      max-width: 820px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 20pt;
+      border-bottom: 3px solid #FB755B;
+      padding-bottom: 8px;
+      margin-top: 0;
+    }
+    h2 {
+      font-size: 14.5pt;
+      color: #FB755B;
+      border-bottom: 1px solid #e5e5e5;
+      padding-bottom: 4px;
+      margin-top: 26px;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 12pt;
+      margin-top: 18px;
+      page-break-after: avoid;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10px 0 16px;
+      font-size: 10pt;
+      page-break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid #d0d0d0;
+      padding: 6px 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f4f4f6; font-weight: 700; }
+    tr:nth-child(even) td { background: #fafafa; }
+    code {
+      background: #f2f3f5;
+      padding: 1.5px 5px;
+      border-radius: 3px;
+      font-family: 'Consolas', 'D2Coding', monospace;
+      font-size: 9.5pt;
+    }
+    pre {
+      background: #f6f7f9;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      page-break-inside: avoid;
+    }
+    pre code { background: none; padding: 0; }
+    blockquote {
+      border-left: 3px solid #FB755B;
+      margin: 12px 0;
+      padding: 4px 14px;
+      color: #555;
+      background: #fff6f3;
+    }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 22px 0; }
+    strong { color: #000; }
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Xalute 점수 계산 방식</h1>
+</header>
+<h1 id="점수-계산-방식-문서">점수 계산 방식 문서</h1>
+<p>일일 리포트에 표시되는 점수들의 weight와 계산식 정리. (UI에서는 이 설명을 제거했으며, 실제 산정 로직은 본 문서를 기준으로 한다.)</p>
+<p>관련 코드: - 건강점수 / 위험도: <code>lib/screens/vital_signs_service.dart</code> - 에너지 / 수면 점수: <code>lib/screens/samsung_health_service.dart</code>, <code>android/app/src/main/kotlin/com/example/xalute/MainActivity.kt</code></p>
+<hr />
+<h2 id="건강점수-wellness-score">1. 건강점수 (Wellness Score)</h2>
+<p>자체 측정값(SpO2 / 심박수 / 피부온도)을 baseline과 비교해 0~100으로 산출.</p>
+<h3 id="가중치-weight">가중치 (weight)</h3>
+<table>
+<thead>
+<tr class="header">
+<th>항목</th>
+<th>weight</th>
+<th>정규화 후</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>심박수 (HR)</td>
+<td>0.25</td>
+<td>50%</td>
+</tr>
+<tr class="even">
+<td>산소포화도 (SpO2)</td>
+<td>0.15</td>
+<td>30%</td>
+</tr>
+<tr class="odd">
+<td>피부온도 (SkinTemp)</td>
+<td>0.10</td>
+<td>20%</td>
+</tr>
+<tr class="even">
+<td>호흡수 (RR)</td>
+<td>—</td>
+<td>미측정(제외)</td>
+</tr>
+<tr class="odd">
+<td>HRV</td>
+<td>—</td>
+<td>미측정(제외)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>호흡수·HRV는 현재 센서로 수집 불가 → 제외하고 남은 항목의 weight 합으로 정규화한다. (측정 가능한 항목만 합산 후 <code>score = Σ(devScore·weight) / Σ(weight)</code>)</p>
+</blockquote>
+<h3 id="항목별-점수-devscore">항목별 점수 (devScore)</h3>
+<pre><code>devScore(value, baseline) = clamp(100 - |value - mean| / std * 25, 0, 100)</code></pre>
+<ul>
+<li>baseline에서 1σ 벗어날 때마다 25점 감점. (mean에 가까울수록 100점)</li>
+</ul>
+<h3 id="단기24h-vs-장기28일">단기(24h) vs 장기(28일)</h3>
+<ul>
+<li><strong>단기</strong>: 최근 측정 세션 평균값 vs 28일 baseline</li>
+<li><strong>장기</strong>: 28일 누적 평균값 vs 인구 표준(population norm)</li>
+</ul>
+<h3 id="baseline">baseline</h3>
+<ul>
+<li>윈도우: 28일. 항목별 표본 <strong>3개 이상</strong>이어야 개인 baseline 사용, 미만이면 인구 표준 사용.</li>
+<li>개인화 적용 조건(<code>usingPersonalBaseline</code>): 최근 <strong>7일 내 측정 5회 이상</strong>.</li>
+<li>인구 표준값: | 항목 | mean | std | |——|——|—–| | HR | 70 | 12 | | SpO2 | 97.5 | 1.2 | | SkinTemp | 33.0 | 1.2 |</li>
+</ul>
+<hr />
+<h2 id="건강-위험도-개선-news2">2. 건강 위험도 (개선 NEWS2)</h2>
+<p>항목별 0~3점을 합산. <code>item = max(σ기반 점수, 절대 임계 점수)</code>.</p>
+<h3 id="σ-기반-점수">σ 기반 점수</h3>
+<p><code>s = |value - mean| / std</code> → <code>s≤1:0, s≤2:1, s≤3:2, 그 외:3</code></p>
+<h3 id="절대-임계floor">절대 임계(floor)</h3>
+<table>
+<thead>
+<tr class="header">
+<th>항목</th>
+<th>3점</th>
+<th>2점</th>
+<th>1점</th>
+<th>0점</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SpO2</td>
+<td>≤91</td>
+<td>≤93</td>
+<td>≤95</td>
+<td>그 외</td>
+</tr>
+<tr class="even">
+<td>HR</td>
+<td>≤40 또는 ≥131</td>
+<td>≤50 또는 ≥111</td>
+<td>≥91</td>
+<td>그 외</td>
+</tr>
+<tr class="odd">
+<td>SkinTemp</td>
+<td>≤30 또는 ≥39</td>
+<td>≤31 또는 ≥38</td>
+<td>≤32 또는 ≥37</td>
+<td>그 외</td>
+</tr>
+</tbody>
+</table>
+<h3 id="조치action">조치(action)</h3>
+<ul>
+<li>총점 ≥ 4 <strong>또는</strong> 단일 항목 3점 → <strong>즉시 경고</strong> (immediateAlert)</li>
+<li>총점 ≥ 1 → <strong>경과 관찰</strong> (observe24h)</li>
+<li>그 외 → <strong>정상</strong> (recordOnly)</li>
+</ul>
+<hr />
+<h2 id="에너지-점수-samsung-health">3. 에너지 점수 (Samsung Health)</h2>
+<p>헤드라인 점수는 <strong>Samsung Health SDK가 산출한 완성값</strong>을 그대로 읽어온다 (<code>DataType.EnergyScoreType.ENERGY_SCORE</code>, 전날~오늘 중 최신 1건). 내부 알고리즘은 비공개.</p>
+<h3 id="서브-항목">서브 항목</h3>
+<table>
+<thead>
+<tr class="header">
+<th>항목</th>
+<th>산출</th>
+<th>비고</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>활동</td>
+<td>전날 칼로리/활동시간 기반(삼성 내부)</td>
+<td>SDK 서브점수 미제공</td>
+</tr>
+<tr class="even">
+<td>수면</td>
+<td>삼성 수면 점수 입력</td>
+<td>아래 4) 참고</td>
+</tr>
+<tr class="odd">
+<td>수면 중 HR</td>
+<td>수면 세션 구간 평균 심박수</td>
+<td>낮을수록 회복 양호</td>
+</tr>
+<tr class="even">
+<td>수면 중 HRV</td>
+<td>자율신경 회복 지표</td>
+<td><strong>SDK 1.1.0 미노출</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="수면-점수-samsung-health">4. 수면 점수 (Samsung Health)</h2>
+<p>헤드라인 점수는 <strong>Samsung SDK <code>SLEEP_SCORE</code></strong> 값을 그대로 사용. 서브컴포넌트는 단계별 시간으로 자체 계산.</p>
+<h3 id="서브컴포넌트-점수식">서브컴포넌트 점수식</h3>
+<table>
+<thead>
+<tr class="header">
+<th>컴포넌트</th>
+<th>계산</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>총 수면 시간</td>
+<td>7–9h=100 / 6–7h·9–10h=80 / 5–6h·10–11h=60 / 그 외=30</td>
+</tr>
+<tr class="even">
+<td>수면 주기</td>
+<td>REM 진입 횟수: 5회=100 / 4=85 / 3=70 / 2=50 / 1=30 / 0=0</td>
+</tr>
+<tr class="odd">
+<td>깨거나 뒤척임</td>
+<td>AWAKE/총수면: &lt;5%=100 / &lt;10%=80 / &lt;20%=60 / 그 외=30</td>
+</tr>
+<tr class="even">
+<td>신체 회복</td>
+<td><code>clamp((deep%/20)*100, 0, 100)</code> — 딥슬립 20%가 만점</td>
+</tr>
+<tr class="odd">
+<td>정신 회복</td>
+<td><code>clamp((rem%/25)*100, 0, 100)</code> — REM 25%가 만점</td>
+</tr>
+</tbody>
+</table>
+<h3 id="단계-시간-정의">단계 시간 정의</h3>
+<ul>
+<li><code>totalSleep = deep + rem + light</code> (AWAKE 제외)</li>
+<li><code>total = SDK duration ?? (totalSleep + awake)</code></li>
+<li><code>cycleCount</code> = 수면 세션 내 REM 단계 진입 횟수</li>
+<li>단계 데이터 출처: Samsung 수면 세션(<code>SleepSession.stages</code>: DEEP/REM/LIGHT/AWAKE)</li>
+</ul>
+</body>
+</html>

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'ecg_page.dart';
 import 'setting_page.dart';
-import 'survey_list_page.dart';
 import 'vital_signs_page.dart';
+import 'vital_signs_service.dart';
 
 // ─────────────────────────────────────────────
 // 1) AppTab 모델
@@ -64,22 +66,17 @@ class _MainTabPageState extends State<MainTabPage> {
   // 단순 페이지는 page:를 사용합니다.
   late final List<AppTab> _tabs = [
     AppTab(
-      label: 'ECG',
+      label: '리포트',
+      icon: Icons.favorite_border,
+      activeIcon: Icons.favorite,
+      builder: (controller) =>
+          VitalSignsPage(controller: controller, tabIndex: 0),
+    ),
+    AppTab(
+      label: '기록',
       icon: Icons.monitor_heart_outlined,
       activeIcon: Icons.monitor_heart,
       builder: (controller) => EcgPage(),
-    ),
-    AppTab(
-      label: '바이탈',
-      icon: Icons.favorite_border,
-      activeIcon: Icons.favorite,
-      page: const VitalSignsPage(),
-    ),
-    AppTab(
-      label: '설문기록',
-      icon: Icons.assignment_outlined,
-      activeIcon: Icons.assignment_turned_in,
-      page: const SurveyListPage(),
     ),
     AppTab(
       label: '설정',
@@ -93,6 +90,15 @@ class _MainTabPageState extends State<MainTabPage> {
   void initState() {
     super.initState();
     _tabController.addListener(_onTabChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<VitalSignsService>(context, listen: false)
+          .fetchVitalSigns()
+          .catchError((e) {
+        if (e is! PlatformException || e.code != 'NO_DATA') {
+          debugPrint('⚠️ 바이탈 사인 조회 실패: $e');
+        }
+      });
+    });
   }
 
   @override

@@ -91,6 +91,34 @@ class SamsungHealthSummary {
     final mins = totalSleepMinutes ?? 0;
     return '${mins ~/ 60}시간 ${mins % 60}분';
   }
+
+  SamsungHealthSummary copyWith({
+    double? energyScore,
+    int? sleepScore,
+    int? totalSleepMinutes,
+    int? deepSleepMinutes,
+    int? remSleepMinutes,
+    int? lightSleepMinutes,
+    int? awakeDuringMinutes,
+    int? sleepCycleCount,
+    int? physicalRecoveryScore,
+    int? mentalRecoveryScore,
+    double? sleepHR,
+  }) {
+    return SamsungHealthSummary(
+      energyScore: energyScore ?? this.energyScore,
+      sleepScore: sleepScore ?? this.sleepScore,
+      totalSleepMinutes: totalSleepMinutes ?? this.totalSleepMinutes,
+      deepSleepMinutes: deepSleepMinutes ?? this.deepSleepMinutes,
+      remSleepMinutes: remSleepMinutes ?? this.remSleepMinutes,
+      lightSleepMinutes: lightSleepMinutes ?? this.lightSleepMinutes,
+      awakeDuringMinutes: awakeDuringMinutes ?? this.awakeDuringMinutes,
+      sleepCycleCount: sleepCycleCount ?? this.sleepCycleCount,
+      physicalRecoveryScore: physicalRecoveryScore ?? this.physicalRecoveryScore,
+      mentalRecoveryScore: mentalRecoveryScore ?? this.mentalRecoveryScore,
+      sleepHR: sleepHR ?? this.sleepHR,
+    );
+  }
 }
 
 // ─── 서비스 ──────────────────────────────────────────────────────────

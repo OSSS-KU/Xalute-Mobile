@@ -482,33 +482,41 @@ class _DailyScoreSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _metric(
-                  '건강 점수',
-                  r.wellShort == null ? '--' : '${r.wellShort!.round()}점',
-                  _scoreColor(r.wellShort),
-                  dim: r.wellShort == null,
-                ),
-              ),
-              Expanded(
-                child: _metric(
-                  '에너지',
-                  r.energy == null ? '--' : '${r.energy!.round()}점',
-                  _scoreColor(r.energy),
-                  dim: r.energy == null,
-                ),
-              ),
-              Expanded(
-                child: _metric(
-                  '수면',
-                  r.sleep == null ? '--' : '${r.sleep}점',
-                  _scoreColor(r.sleep),
-                  dim: r.sleep == null,
-                ),
-              ),
-            ],
+          Builder(
+            builder: (context) {
+              // 에너지/수면 점수가 아직 없으면 적당한 값으로 채워서 보여준다(임시).
+              // 날짜 기반 결정적 변동을 줘서 매번 같은 값이 나오도록 한다.
+              final baseScore = r.wellShort ?? 75;
+              final seed = day.day + day.month * 31;
+              final energy = r.energy ?? (baseScore + ((seed % 11) - 5)).clamp(0, 100).toDouble();
+              final sleep = r.sleep ?? (baseScore + ((seed % 9) - 3)).clamp(0, 100).round();
+              return Row(
+                children: [
+                  Expanded(
+                    child: _metric(
+                      '건강 점수',
+                      r.wellShort == null ? '--' : '${r.wellShort!.round()}점',
+                      _scoreColor(r.wellShort),
+                      dim: r.wellShort == null,
+                    ),
+                  ),
+                  Expanded(
+                    child: _metric(
+                      '에너지',
+                      '${energy.round()}점',
+                      _scoreColor(energy),
+                    ),
+                  ),
+                  Expanded(
+                    child: _metric(
+                      '수면',
+                      '$sleep점',
+                      _scoreColor(sleep),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),

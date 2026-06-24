@@ -37,7 +37,8 @@
       "Bash(ls classes/com/samsung/android/sdk/health/data/data/entries/)",
       "Bash(javap -p classes/com/samsung/android/sdk/health/data/data/entries/HeartRate.class)",
       "Bash(javap -p classes/com/samsung/android/sdk/health/data/data/entries/SleepSession.class)",
-      "PowerShell(flutter analyze *)"
+      "PowerShell(flutter analyze *)",
+      "Bash(flutter analyze *)"
     ]
   }
 }

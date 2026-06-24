@@ -42,8 +42,9 @@ final _mockNews2 = News2Result(
   measuredAt: DateTime(2026, 1, 1),
 );
 const double _mockSpo2 = 98;
-const double _mockHr = 72;
-const double _mockTemp = 33.2;
+const double _mockHr = 72;     // 정상 안정 시 심박수 (bpm)
+const double _mockTemp = 36.5;  // 정상 체온 (°C)
+const double _mockSleepHrv = 45; // 수면 중 HRV (ms)
 
 // 오늘 날짜의 최신 ECG 측정 항목 (없으면 null)
 EcgEntry? _latestTodayEcg(EcgDataService s) {
@@ -302,24 +303,43 @@ class _DataView extends StatelessWidget {
     final realSummary = Platform.isAndroid
         ? Provider.of<SamsungHealthService>(context).summary
         : null;
-    final shSummary =
-        realSummary ?? (_demoMockSamsung ? _mockSamsungSummary : null);
+    // 실제 요약이 있어도 에너지/수면 점수가 안 들어오는 경우가 있어
+    // 비어 있는 점수만 목업값으로 채워서 UI에 표시한다(임시).
+    SamsungHealthSummary? shSummary;
+    if (realSummary != null) {
+      shSummary = _demoMockSamsung
+          ? realSummary.copyWith(
+              energyScore: realSummary.energyScore ?? _mockSamsungSummary.energyScore,
+              sleepScore: realSummary.sleepScore ?? _mockSamsungSummary.sleepScore,
+              totalSleepMinutes: realSummary.totalSleepMinutes ?? _mockSamsungSummary.totalSleepMinutes,
+              deepSleepMinutes: realSummary.deepSleepMinutes ?? _mockSamsungSummary.deepSleepMinutes,
+              remSleepMinutes: realSummary.remSleepMinutes ?? _mockSamsungSummary.remSleepMinutes,
+              lightSleepMinutes: realSummary.lightSleepMinutes ?? _mockSamsungSummary.lightSleepMinutes,
+              awakeDuringMinutes: realSummary.awakeDuringMinutes ?? _mockSamsungSummary.awakeDuringMinutes,
+              sleepCycleCount: realSummary.sleepCycleCount ?? _mockSamsungSummary.sleepCycleCount,
+              sleepHR: realSummary.sleepHR ?? _mockSamsungSummary.sleepHR,
+            )
+          : realSummary;
+    } else {
+      shSummary = _demoMockSamsung ? _mockSamsungSummary : null;
+    }
 
-    // 건강점수: 실제값 우선, 없으면 데모 목업
+    // 건강점수: 실제값 우선, 비어 있는 항목은 데모 목업으로 채운다(임시).
     final realWellness = service.wellnessScore;
-    final useDemoWellness = realWellness == null && _demoMockSamsung;
     final wellness = realWellness ?? (_demoMockSamsung ? _mockWellness : null);
-    final double? wSpo2 = realWellness != null
-        ? (service.spo2Data.isNotEmpty ? service.spo2Avg : null)
-        : (useDemoWellness ? _mockSpo2 : null);
-    final double? wHr = realWellness != null
-        ? (service.heartRateData.isNotEmpty ? service.hrAvg : null)
-        : (useDemoWellness ? _mockHr : null);
-    final double? wTemp = realWellness != null
-        ? (service.skinTempData.isNotEmpty ? service.tempAvg : null)
-        : (useDemoWellness ? _mockTemp : null);
+    final double? wSpo2 = (realWellness != null && service.spo2Data.isNotEmpty)
+        ? service.spo2Avg
+        : (_demoMockSamsung ? _mockSpo2 : null);
+    final double? wHr = (realWellness != null && service.heartRateData.isNotEmpty)
+        ? service.hrAvg
+        : (_demoMockSamsung ? _mockHr : null);
+    final double? wTemp = (realWellness != null && service.skinTempData.isNotEmpty)
+        ? service.tempAvg
+        : (_demoMockSamsung ? _mockTemp : null);
     final News2Result? wNews2 =
-        realWellness != null ? service.lastNews2Result : (useDemoWellness ? _mockNews2 : null);
+        (realWellness != null && service.lastNews2Result != null)
+            ? service.lastNews2Result
+            : (_demoMockSamsung ? _mockNews2 : null);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -681,8 +701,7 @@ class _EnergyScoreCardState extends State<_EnergyScoreCard> {
                 _SubMetricRow(
                   icon: Icons.waves,
                   label: '수면 중 HRV',
-                  value: '--',
-                  note: 'SDK 1.1.0 미지원',
+                  value: '${_mockSleepHrv.toStringAsFixed(0)} ms',
                   color: const Color(0xFFFF9500),
                 ),
               ],

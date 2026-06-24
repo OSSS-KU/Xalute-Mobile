@@ -165,7 +165,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
             }
           });
           // ECG Founder 결과를 리스트 페이지에 반영
-          final diagnosisResult = diagnoses.isEmpty ? '정상' : '이상 소견 의심';
+          final diagnosisResult = diagnoses.isEmpty ? 'Normal' : 'Abnormality suspected';
           if (widget.txtPath.isNotEmpty) {
             Provider.of<EcgDataService>(context, listen: false)
                 .updateDiagnosisResult(widget.txtPath, diagnosisResult);
@@ -250,7 +250,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
     final isFirstSignal = selectedLead == 0;
 
     if (spots.isEmpty) {
-      return const Center(child: Text('해당 리드에 대한 데이터가 없습니다.', style: TextStyle(fontSize: 14)));
+      return const Center(child: Text('No data for this lead.', style: TextStyle(fontSize: 14)));
     }
 
     final adjustedSpots = isFirstSignal
@@ -429,7 +429,7 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        title: const Text('측정 결과', style: TextStyle(color: Colors.black)),
+        title: const Text('Measurement Result', style: TextStyle(color: Colors.black)),
         iconTheme: const IconThemeData(color: Colors.black),
         centerTitle: true,
       ),
@@ -451,15 +451,15 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('날짜', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(DateFormat('yyyy.MM.dd (E) HH시 mm분', 'ko_KR').format(widget.timestamp)),
+                  const Text('Date', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(DateFormat('yyyy.MM.dd (E) HH:mm', 'en_US').format(widget.timestamp)),
                 ],
               ),
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('측정 기기', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Device', style: TextStyle(fontWeight: FontWeight.bold)),
                   Text(widget.deviceType),
                 ],
               ),
@@ -468,11 +468,11 @@ class _EcgDetailPageState extends State<EcgDetailPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('의심 질환', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Suspected conditions', style: TextStyle(fontWeight: FontWeight.bold)),
                   Expanded(
                     child: Text(
                       highProbabilityDiagnoses.isEmpty
-                          ? '의심 질환 없음'
+                          ? 'No suspected conditions'
                           : highProbabilityDiagnoses.join(', '),
                       textAlign: TextAlign.right,
                       style: TextStyle(

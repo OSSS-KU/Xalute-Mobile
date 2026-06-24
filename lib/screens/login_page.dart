@@ -53,7 +53,7 @@ class _LoginPageState extends State<LoginPage> {
           );
         }
       } else {
-        throw Exception("서버에서 유저 정보를 가져오는데 실패했습니다.");
+        throw Exception("Failed to fetch user info from the server.");
       }
     } catch (e) {
       rethrow;
@@ -96,7 +96,7 @@ class _LoginPageState extends State<LoginPage> {
       debugPrint("Google login error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Google 로그인 중 오류가 발생했습니다: $e")),
+          SnackBar(content: Text("An error occurred during Google sign-in: $e")),
         );
       }
     } finally {
@@ -147,7 +147,7 @@ class _LoginPageState extends State<LoginPage> {
       debugPrint("Apple login error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Apple 로그인 중 오류가 발생했습니다: $e")),
+          SnackBar(content: Text("An error occurred during Apple sign-in: $e")),
         );
       }
     } finally {
@@ -228,7 +228,7 @@ class _LoginPageState extends State<LoginPage> {
                       height: 24,
                       width: 24,
                     ),
-                    label: 'Google로 로그인',
+                    label: 'Sign in with Google',
                   ),
 
                   // Apple 로그인 버튼 (iOS 전용, Google 버튼과 동일 디자인)
@@ -241,7 +241,7 @@ class _LoginPageState extends State<LoginPage> {
                         '',
                         style: TextStyle(fontSize: 22, color: Colors.black87),
                       ),
-                      label: 'Apple로 로그인',
+                      label: 'Sign in with Apple',
                     ),
                   ],
 

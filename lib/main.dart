@@ -181,6 +181,7 @@ void _applyIosVitalSigns(Map<String, dynamic> data) {
   final temp = (data['skin_temp_data'] as List? ?? [])
       .map((e) => (e as num).toDouble())
       .toList();
+  final hrvSdnn = (data['hrv_sdnn'] as num?)?.toDouble();
   final ts = (data['timestamp'] as num?)?.toInt() ??
       DateTime.now().millisecondsSinceEpoch;
 
@@ -190,6 +191,7 @@ void _applyIosVitalSigns(Map<String, dynamic> data) {
     heartRate: hr,
     skinTemp: temp,
     timestamp: DateTime.fromMillisecondsSinceEpoch(ts).toLocal(),
+    hrvSdnn: hrvSdnn,
   );
   debugPrint(
       "✅ iOS HealthKit 바이탈 업데이트 - SpO2: ${spo2.length}개, HR: ${hr.length}개, Temp: ${temp.length}개");
@@ -224,9 +226,9 @@ Future<void> saveReceivedEcg(
   debugPrint("✅ 분석 결과 JSON 저장 완료: ${jsonFile.path}");
 
   final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal();
-  final mappedResult = resultKey == 'normal' ? '정상'
-      : resultKey == 'abnormal' ? '이상 소견 의심'
-      : '분석 중';
+  final mappedResult = resultKey == 'normal' ? 'Normal'
+      : resultKey == 'abnormal' ? 'Abnormality suspected'
+      : 'Analyzing';
 
   final context = navigatorKey.currentContext!;
   final ecgService = Provider.of<EcgDataService>(context, listen: false);
@@ -234,7 +236,7 @@ Future<void> saveReceivedEcg(
   ecgService.addEntry(EcgEntry(
     dateTime: dateTime,
     result: mappedResult,
-    color: mappedResult == '정상' ? Colors.green : const Color(0xFFFB755B),
+    color: mappedResult == 'Normal' ? Colors.green : const Color(0xFFFB755B),
     content: content,
     txtPath: file.path,
     jsonPath: jsonFile.path,
@@ -282,9 +284,9 @@ Future<void> preloadSavedEcgFiles(EcgDataService service) async {
 
       final resultCode = parts[2];
       debugPrint("⚠️ resultCode: $resultCode");
-      final result = resultCode == 'normal' ? '정상'
-          : resultCode == 'abnormal' ? '이상 소견 의심'
-          : '분석 중';
+      final result = resultCode == 'normal' ? 'Normal'
+          : resultCode == 'abnormal' ? 'Abnormality suspected'
+          : 'Analyzing';
       final color = resultCode == 'normal' ? Colors.green
           : resultCode == 'abnormal' ? const Color(0xFFFB755B)
           : Colors.grey;

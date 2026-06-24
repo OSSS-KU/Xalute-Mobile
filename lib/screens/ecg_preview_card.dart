@@ -102,7 +102,7 @@ class _TodayEcgCardState extends State<TodayEcgCard> {
   Widget _miniChart() {
     if (_spots.isEmpty) {
       return Center(
-        child: Text('파형 데이터 없음',
+        child: Text('No waveform data',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
       );
     }
@@ -163,10 +163,10 @@ class _TodayEcgCardState extends State<TodayEcgCard> {
     final cached = Provider.of<EcgDataService>(context, listen: false)
         .diagnosisResultFor(widget.entry);
     final hasDiag = _diagnoses.isNotEmpty;
-    final abnormal = hasDiag || cached == '이상 소견 의심';
+    final abnormal = hasDiag || cached == 'Abnormality suspected';
     final diagText = hasDiag
         ? _diagnoses.join(', ')
-        : (abnormal ? '이상 소견 의심' : '의심 질환 없음');
+        : (abnormal ? 'Abnormality suspected' : 'No suspected conditions');
     final accent = abnormal ? const Color(0xFFFF3B30) : const Color(0xFF34C759);
 
     return GestureDetector(
@@ -201,7 +201,7 @@ class _TodayEcgCardState extends State<TodayEcgCard> {
                 ),
                 const SizedBox(width: 10),
                 const Text(
-                  '오늘의 ECG',
+                  'Today\'s ECG',
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -229,12 +229,12 @@ class _TodayEcgCardState extends State<TodayEcgCard> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('의심 질환',
+                const Text('Suspected conditions',
                     style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600)),
                 const Spacer(),
                 if (_loading)
-                  Text('분석 중…',
+                  Text('Analyzing…',
                       style:
                           TextStyle(fontSize: 13, color: Colors.grey.shade500))
                 else

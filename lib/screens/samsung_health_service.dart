@@ -89,8 +89,13 @@ class SamsungHealthSummary {
 
   String get totalSleepStr {
     final mins = totalSleepMinutes ?? 0;
-    return '${mins ~/ 60}시간 ${mins % 60}분';
+    return '${mins ~/ 60}h ${mins % 60}m';
   }
+
+  // HealthKit처럼 자체 수면 점수가 없는 플랫폼에서 실측 단계 데이터로 계산하는 수면 점수.
+  // 총 수면(40%) + 수면 주기(30%) + 뒤척임 적음(30%) 가중 평균.
+  int get computedSleepScore =>
+      (totalSleepScore * 0.4 + cycleScore * 0.3 + awakenessScore * 0.3).round();
 
   SamsungHealthSummary copyWith({
     double? energyScore,
@@ -136,14 +141,26 @@ class SamsungHealthService extends ChangeNotifier {
   bool get isAndroid => Platform.isAndroid;
 
   Future<void> fetchSummary() async {
-    if (!isAndroid) return;
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     isLoading = true;
     errorMessage = null;
     notifyListeners();
 
     try {
-      final raw = await _channel.invokeMethod<Map>('getSamsungHealthSummary');
-      summary = raw != null ? SamsungHealthSummary.fromMap(raw) : null;
+      // Android: Samsung Health Data SDK / iOS: HealthKit 수면 분석
+      final method =
+          Platform.isIOS ? 'getHealthSummary' : 'getSamsungHealthSummary';
+      final raw = await _channel.invokeMethod<Map>(method);
+      var parsed = raw != null ? SamsungHealthSummary.fromMap(raw) : null;
+
+      // iOS HealthKit은 수면 점수를 제공하지 않으므로 실측 단계 데이터로 직접 계산한다.
+      if (parsed != null &&
+          Platform.isIOS &&
+          parsed.sleepScore == null &&
+          parsed.totalSleepMinutes != null) {
+        parsed = parsed.copyWith(sleepScore: parsed.computedSleepScore);
+      }
+      summary = parsed;
 
       // 오늘 날짜 스냅샷 저장 (달력 누적용 + 데이터 수집용 세부값)
       if (summary != null) {

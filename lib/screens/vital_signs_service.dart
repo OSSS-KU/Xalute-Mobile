@@ -16,6 +16,7 @@ class VitalMeasurement {
   final double? rr;
   final double? rrResting;
   final double? hrvRmssd;
+  final double? hrvSdnn;     // HealthKit(Apple) HRV — RMSSD와 다른 지표
   final double? sleepHrMin;
   final double? activityLevel;
 
@@ -27,6 +28,7 @@ class VitalMeasurement {
     this.rr,
     this.rrResting,
     this.hrvRmssd,
+    this.hrvSdnn,
     this.sleepHrMin,
     this.activityLevel,
   });
@@ -83,6 +85,8 @@ const _normSpo2 = BaselineStats(mean: 97.5, std: 1.2, p10: 96.0, p25: 97.0, p50:
 const _normTemp = BaselineStats(mean: 33.0, std: 1.2, p10: 31.5, p25: 32.5, p50: 33.0, p75: 33.8, p90: 34.5, nSamples: 0, windowDays: 0);
 // 야간 RMSSD 성인 대략치 (개인 baseline 7일 미만 시 fallback) — 높을수록 좋음
 const _normHrv  = BaselineStats(mean: 40.0, std: 20.0, p10: 18.0, p25: 26.0, p50: 38.0, p75: 52.0, p90: 68.0, nSamples: 0, windowDays: 0);
+// 야간 SDNN 성인 대략치 (HealthKit/Apple HRV). SDNN은 RMSSD보다 스케일이 커서 norm을 분리한다.
+const _normHrvSdnn = BaselineStats(mean: 50.0, std: 22.0, p10: 25.0, p25: 36.0, p50: 48.0, p75: 62.0, p90: 80.0, nSamples: 0, windowDays: 0);
 
 // ─── Wellness Score ──────────────────────────────────────────────────
 
@@ -105,17 +109,17 @@ enum News2Action { recordOnly, observe24h, immediateAlert }
 extension News2ActionExt on News2Action {
   String get label {
     switch (this) {
-      case News2Action.recordOnly:     return '정상';
-      case News2Action.observe24h:    return '경과 관찰';
-      case News2Action.immediateAlert: return '즉시 경고';
+      case News2Action.recordOnly:     return 'Normal';
+      case News2Action.observe24h:    return 'Monitor';
+      case News2Action.immediateAlert: return 'Alert';
     }
   }
 
   String get description {
     switch (this) {
-      case News2Action.recordOnly:     return '결과만 기록합니다.';
-      case News2Action.observe24h:    return '24시간 후 재측정을 권장합니다.';
-      case News2Action.immediateAlert: return '추가 측정 및 전문가 상담을 권장합니다.';
+      case News2Action.recordOnly:     return 'Results recorded only.';
+      case News2Action.observe24h:    return 'Re-measurement recommended in 24 hours.';
+      case News2Action.immediateAlert: return 'Additional measurement and professional consultation recommended.';
     }
   }
 }
@@ -149,7 +153,8 @@ class VitalSignsService extends ChangeNotifier {
 
   // 수면 측정값 (워치 SleepHrvService 회복 창에서 산출)
   double? sleepHrMin;     // 수면 최저심박 (bpm)
-  double? hrvRmssd;       // 회복 창 RMSSD (ms)
+  double? hrvRmssd;       // 회복 창 RMSSD (ms) — 워치/서버 경로
+  double? hrvSdnn;        // HealthKit(Apple) HRV (ms) — iOS 경로
   List<double> sleepHrSeries = [];
   List<double> sleepRmssdSeries = [];
 
@@ -176,29 +181,32 @@ class VitalSignsService extends ChangeNotifier {
     required List<int> heartRate,
     required List<double> skinTemp,
     required DateTime timestamp,
+    double? hrvSdnn,
   }) {
     spo2Data = spo2;
     heartRateData = heartRate;
     skinTempData = skinTemp;
     lastUpdated = timestamp;
+    if (hrvSdnn != null) this.hrvSdnn = hrvSdnn;
 
     _addToHistory(VitalMeasurement(
       timestamp: timestamp,
       spo2:     spo2.isNotEmpty      ? _avgI(spo2)     : null,
       hr:       heartRate.isNotEmpty ? _avgI(heartRate) : null,
       skinTemp: skinTemp.isNotEmpty  ? _avgD(skinTemp)  : null,
+      hrvSdnn:  hrvSdnn,
     ));
 
     _computeScores();
     notifyListeners();
 
-    saveToBackend(spo2: spo2, heartRate: heartRate, skinTemp: skinTemp, timestamp: timestamp)
+    saveToBackend(spo2: spo2, heartRate: heartRate, skinTemp: skinTemp, timestamp: timestamp, hrvSdnn: hrvSdnn)
         .catchError((e) => debugPrint('⚠️ 바이탈 서버 저장 실패: $e'));
   }
 
   Future<void> fetchVitalSigns() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('로그인이 필요합니다');
+    if (user == null) throw Exception('Login required');
 
     final uid = user.uid;
     final token = await user.getIdToken();
@@ -210,7 +218,7 @@ class VitalSignsService extends ChangeNotifier {
     });
 
     if (response.statusCode != 200) {
-      throw Exception('서버 오류: ${response.statusCode}');
+      throw Exception('Server error: ${response.statusCode}');
     }
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -229,6 +237,7 @@ class VitalSignsService extends ChangeNotifier {
     List<double> skinTemp = [];
     double? sleepHrMinVal;
     double? hrvRmssdVal;
+    double? hrvSdnnVal;
     List<double> hrSeries = const [];
     List<double> rmssdSeries = const [];
 
@@ -251,6 +260,9 @@ class VitalSignsService extends ChangeNotifier {
         case 'SleepHRV_RMSSD':
           if (values.isNotEmpty) hrvRmssdVal = (values.first as num).toDouble();
           break;
+        case 'SleepHRV_SDNN':
+          if (values.isNotEmpty) hrvSdnnVal = (values.first as num).toDouble();
+          break;
         case 'SleepHR_Series':
           hrSeries = values.map((e) => (e as num).toDouble()).toList();
           break;
@@ -260,8 +272,8 @@ class VitalSignsService extends ChangeNotifier {
       }
     }
 
-    if (spo2.isNotEmpty || heartRate.isNotEmpty || skinTemp.isNotEmpty) {
-      updateData(spo2: spo2, heartRate: heartRate, skinTemp: skinTemp, timestamp: effectiveDateTime);
+    if (spo2.isNotEmpty || heartRate.isNotEmpty || skinTemp.isNotEmpty || hrvSdnnVal != null) {
+      updateData(spo2: spo2, heartRate: heartRate, skinTemp: skinTemp, timestamp: effectiveDateTime, hrvSdnn: hrvSdnnVal);
     }
     if (sleepHrMinVal != null && hrvRmssdVal != null) {
       // 서버에서 읽어온 값이므로 재저장 안 함(persist:false)
@@ -277,6 +289,7 @@ class VitalSignsService extends ChangeNotifier {
     required List<int> heartRate,
     required List<double> skinTemp,
     required DateTime timestamp,
+    double? hrvSdnn,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -285,6 +298,7 @@ class VitalSignsService extends ChangeNotifier {
     if (spo2.isNotEmpty) components.add({'code': 'SpO2', 'unit': '%', 'values': spo2});
     if (heartRate.isNotEmpty) components.add({'code': 'HeartRate', 'unit': 'bpm', 'values': heartRate});
     if (skinTemp.isNotEmpty) components.add({'code': 'SkinTemperature', 'unit': '°C', 'values': skinTemp});
+    if (hrvSdnn != null) components.add({'code': 'SleepHRV_SDNN', 'unit': 'ms', 'values': [hrvSdnn]});
     if (components.isEmpty) return;
 
     final token = await user.getIdToken();
@@ -407,11 +421,13 @@ class VitalSignsService extends ChangeNotifier {
     final spo2s = window.map((m) => m.spo2).whereType<double>().toList();
     final temps = window.map((m) => m.skinTemp).whereType<double>().toList();
     final hrvs  = window.map((m) => m.hrvRmssd).whereType<double>().toList();
+    final hrvSdnns = window.map((m) => m.hrvSdnn).whereType<double>().toList();
 
     if (hrs.length >= 3)   result['hr']       = BaselineStats.fromValues(hrs,   days);
     if (spo2s.length >= 3) result['spo2']     = BaselineStats.fromValues(spo2s, days);
     if (temps.length >= 3) result['skinTemp'] = BaselineStats.fromValues(temps, days);
     if (hrvs.length >= 3)  result['hrv']      = BaselineStats.fromValues(hrvs,  days);
+    if (hrvSdnns.length >= 3) result['hrvSdnn'] = BaselineStats.fromValues(hrvSdnns, days);
     return result;
   }
 
@@ -420,6 +436,7 @@ class VitalSignsService extends ChangeNotifier {
       (key == 'hr' ? _normHr
         : key == 'spo2' ? _normSpo2
         : key == 'hrv' ? _normHrv
+        : key == 'hrvSdnn' ? _normHrvSdnn
         : _normTemp);
 
   // ── Wellness Score ─────────────────────────────────────────────────
@@ -452,8 +469,12 @@ class VitalSignsService extends ChangeNotifier {
       shortSum += _devScore(_avgD(skinTempData), _bl(bl28, 'skinTemp')) * 0.10;
       shortW   += 0.10;
     }
+    // HRV: 워치 경로(RMSSD) 우선, 없으면 HealthKit(SDNN) — 각자 전용 baseline 사용
     if (hrvRmssd != null) {
       shortSum += _hrvScore(hrvRmssd!, _bl(bl28, 'hrv')) * 0.20;
+      shortW   += 0.20;
+    } else if (hrvSdnn != null) {
+      shortSum += _hrvScore(hrvSdnn!, _bl(bl28, 'hrvSdnn')) * 0.20;
       shortW   += 0.20;
     }
 
@@ -463,10 +484,12 @@ class VitalSignsService extends ChangeNotifier {
     final allHr   = _history.map((m) => m.hr).whereType<double>().toList();
     final allTemp = _history.map((m) => m.skinTemp).whereType<double>().toList();
     final allHrv  = _history.map((m) => m.hrvRmssd).whereType<double>().toList();
+    final allHrvSdnn = _history.map((m) => m.hrvSdnn).whereType<double>().toList();
     if (allSpo2.isNotEmpty) { longSum += _devScore(allSpo2.fold(0.0, (s, v) => s + v) / allSpo2.length, _normSpo2) * 0.15; longW += 0.15; }
     if (allHr.isNotEmpty)   { longSum += _devScore(allHr.fold(0.0, (s, v) => s + v)   / allHr.length,   _normHr)   * 0.25; longW += 0.25; }
     if (allTemp.isNotEmpty) { longSum += _devScore(allTemp.fold(0.0, (s, v) => s + v) / allTemp.length,  _normTemp)  * 0.10; longW += 0.10; }
     if (allHrv.isNotEmpty)  { longSum += _hrvScore(allHrv.fold(0.0, (s, v) => s + v)  / allHrv.length,  _normHrv)  * 0.20; longW += 0.20; }
+    else if (allHrvSdnn.isNotEmpty) { longSum += _hrvScore(allHrvSdnn.fold(0.0, (s, v) => s + v) / allHrvSdnn.length, _normHrvSdnn) * 0.20; longW += 0.20; }
 
     wellnessScore = WellnessScore(
       shortTerm:            shortW > 0 ? shortSum / shortW : 0.0,

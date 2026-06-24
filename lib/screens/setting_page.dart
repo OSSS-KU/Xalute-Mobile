@@ -142,7 +142,7 @@ class _SettingPageState extends State<SettingPage> {
     try {
       // 2. 인증 정보 및 서비스 준비
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception("로그인이 필요합니다.");
+      if (user == null) throw Exception("Login required.");
       final token = await user.getIdToken();
       final prefs = await SharedPreferences.getInstance();
       final ecgService = Provider.of<EcgDataService>(context, listen: false);
@@ -199,10 +199,10 @@ class _SettingPageState extends State<SettingPage> {
         setState(() => _hasChanges = false);
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("서버와 기기에 정보가 저장되었습니다.")),
+          const SnackBar(content: Text("Your information has been saved to the server and device.")),
         );
       } else {
-        throw Exception("서버 저장 실패 (상태코드: ${response.statusCode})");
+        throw Exception("Failed to save to server (status code: ${response.statusCode})");
       }
     } catch (e) {
       // 에러 시 로딩 다이얼로그 닫기
@@ -210,7 +210,7 @@ class _SettingPageState extends State<SettingPage> {
 
       print("저장 에러: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("저장 중 오류가 발생했습니다: $e")),
+        SnackBar(content: Text("An error occurred while saving: $e")),
       );
     }
   }
@@ -259,7 +259,7 @@ class _SettingPageState extends State<SettingPage> {
       initialDate: DateTime(2000, 1, 1), // 초기 표시 날짜 (예: 2000년생)
       firstDate: DateTime(1900),          // 선택 가능한 가장 과거 날짜
       lastDate: DateTime.now(),           // 오늘 이후는 선택 불가
-      locale: const Locale('ko', 'KR'),   // 한국어 설정 (main.dart 설정 필요)
+      locale: const Locale('en', 'US'),   // English locale
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -288,10 +288,10 @@ class _SettingPageState extends State<SettingPage> {
       builder: (context) {
         return SimpleDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Text('프로필 사진 변경'),
+          title: const Text('Change profile photo'),
           children: [
             SimpleDialogOption(
-              child: const Text('카메라로 촬영'),
+              child: const Text('Take a photo'),
               onPressed: () async {
                 Navigator.pop(context, true);
                 final pickedFile = await ImagePicker().pickImage(source: ImageSource.camera);
@@ -304,7 +304,7 @@ class _SettingPageState extends State<SettingPage> {
               },
             ),
             SimpleDialogOption(
-              child: const Text('갤러리에서 선택'),
+              child: const Text('Choose from gallery'),
               onPressed: () async {
                 Navigator.pop(context);
                 final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -317,7 +317,7 @@ class _SettingPageState extends State<SettingPage> {
               },
             ),
             SimpleDialogOption(
-              child: const Text('기본 이미지로 변경'),
+              child: const Text('Reset to default image'),
               onPressed: () {
                 Navigator.pop(context);
                 setState(() {
@@ -371,21 +371,21 @@ class _SettingPageState extends State<SettingPage> {
                         : const AssetImage('assets/icon/profile.png') as ImageProvider,
                   ),
                   const SizedBox(height: 8),
-                  const Text('바꾸기', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  const Text('Change', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
             const SizedBox(height: 32),
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text("이름", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: Text("Name", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _nameController,
               focusNode: _nameFocus,
               decoration: InputDecoration(
-                hintText: "이름을 입력하세요",
+                hintText: "Enter your name",
                 hintStyle: const TextStyle(
                   color: Colors.grey,
                   fontSize: 16,
@@ -406,7 +406,7 @@ class _SettingPageState extends State<SettingPage> {
             const SizedBox(height: 20),
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text("전화번호", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: Text("Phone number", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -416,7 +416,7 @@ class _SettingPageState extends State<SettingPage> {
                 PhoneNumberFormatter(),     // ← 자동 포맷 적용
               ],
               decoration: InputDecoration(
-                hintText: "전화번호를 입력하세요",
+                hintText: "Enter your phone number",
                 hintStyle: const TextStyle(
                   color: Colors.grey,
                   fontSize: 16,
@@ -461,7 +461,7 @@ class _SettingPageState extends State<SettingPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    "도로명 주소",
+                    "Street address",
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
@@ -479,7 +479,7 @@ class _SettingPageState extends State<SettingPage> {
                           child: Text(
                             roadAddress.isNotEmpty
                                 ? roadAddress
-                                : "도로명 주소를 검색하세요",
+                                : "Search for a street address",
                             style: TextStyle(
                               fontSize: 16,
                               height: 1.5,
@@ -501,14 +501,14 @@ class _SettingPageState extends State<SettingPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                "상세주소",
+                "Detailed address",
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: _detailedAddressController,
                 decoration: InputDecoration(
-                  hintText: "상세주소를 입력하세요", // 🔥 처음에 보이는 회색 텍스트
+                  hintText: "Enter detailed address", // 🔥 처음에 보이는 회색 텍스트
                   hintStyle: const TextStyle(
                     color: Colors.grey,
                     fontSize: 16,
@@ -536,7 +536,7 @@ class _SettingPageState extends State<SettingPage> {
           const SizedBox(height: 20),
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text("생년월일", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: Text("Date of birth", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 8),
             GestureDetector(
@@ -548,7 +548,7 @@ class _SettingPageState extends State<SettingPage> {
                     controller: _birthdayController,
                     style: const TextStyle(fontSize: 15),
                     decoration: InputDecoration(
-                      hintText: "날짜를 선택해 주세요",
+                      hintText: "Please select a date",
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
@@ -576,7 +576,7 @@ class _SettingPageState extends State<SettingPage> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text("저장하기", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                child: const Text("Save", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
             // ↓ 여기서부터 추가된 부분
@@ -588,16 +588,16 @@ class _SettingPageState extends State<SettingPage> {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      title: const Text('로그아웃'),
-                      content: const Text('정말 로그아웃 하시겠습니까?'),
+                      title: const Text('Log out'),
+                      content: const Text('Are you sure you want to log out?'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('취소', style: TextStyle(color: Colors.grey)),
+                          child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('로그아웃', style: TextStyle(color: Colors.redAccent)),
+                          child: const Text('Log out', style: TextStyle(color: Colors.redAccent)),
                         ),
                       ],
                     ),
@@ -610,7 +610,7 @@ class _SettingPageState extends State<SettingPage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: const Text(
-                  '로그아웃',
+                  'Log out',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,

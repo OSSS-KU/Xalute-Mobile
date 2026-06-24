@@ -66,20 +66,20 @@ class _MainTabPageState extends State<MainTabPage> {
   // 단순 페이지는 page:를 사용합니다.
   late final List<AppTab> _tabs = [
     AppTab(
-      label: '리포트',
+      label: 'Report',
       icon: Icons.favorite_border,
       activeIcon: Icons.favorite,
       builder: (controller) =>
           VitalSignsPage(controller: controller, tabIndex: 0),
     ),
     AppTab(
-      label: '기록',
+      label: 'Records',
       icon: Icons.monitor_heart_outlined,
       activeIcon: Icons.monitor_heart,
       builder: (controller) => EcgPage(),
     ),
     AppTab(
-      label: '설정',
+      label: 'Settings',
       icon: Icons.settings_outlined,
       activeIcon: Icons.settings,
       page: const SettingPage(),

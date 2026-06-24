@@ -13,7 +13,7 @@ import 'main_tab_page.dart' as tabs;
 // ── 데모용 목업 ──────────────────────────────────────────────────────
 // 데모 이미지를 위해 실제 데이터가 없을 때 건강/에너지/수면 점수를
 // "말이 되는" 임의값으로 채운다. 운영 배포 시 false로 끄면 된다.
-const bool _demoMockSamsung = true;
+const bool _demoMockSamsung = false;
 const _mockSamsungSummary = SamsungHealthSummary(
   energyScore: 78,
   sleepScore: 84,
@@ -44,7 +44,6 @@ final _mockNews2 = News2Result(
 const double _mockSpo2 = 98;
 const double _mockHr = 72;     // 정상 안정 시 심박수 (bpm)
 const double _mockTemp = 36.5;  // 정상 체온 (°C)
-const double _mockSleepHrv = 45; // 수면 중 HRV (ms)
 
 // 오늘 날짜의 최신 ECG 측정 항목 (없으면 null)
 EcgEntry? _latestTodayEcg(EcgDataService s) {
@@ -98,7 +97,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
         Provider.of<VitalSignsService>(context, listen: false)
             .fetchVitalSigns()
             .catchError((_) {}),
-        if (Platform.isAndroid)
+        if (Platform.isAndroid || Platform.isIOS)
           Provider.of<SamsungHealthService>(context, listen: false)
               .fetchSummary()
               .catchError((_) {}),
@@ -110,9 +109,9 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
 
   Future<String> _getIdToken() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('로그인이 필요합니다');
+    if (user == null) throw Exception('Login required');
     final token = await user.getIdToken();
-    if (token == null) throw Exception('토큰 발급 실패');
+    if (token == null) throw Exception('Failed to issue token');
     return token;
   }
 
@@ -128,11 +127,11 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
           showDialog(
             context: context,
             builder: (_) => AlertDialog(
-              content: const Text('워치와의 연결을 확인해주세요.'),
+              content: const Text('Please check your watch connection.'),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('확인')),
+                    child: const Text('OK')),
               ],
             ),
           );
@@ -148,7 +147,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
         showDialog(
           context: context,
           builder: (dctx) => AlertDialog(
-            content: const Text('워치에서 ECG 측정을 진행하시겠습니까?'),
+            content: const Text('Do you want to measure ECG on your watch?'),
             actions: [
               TextButton(
                 onPressed: () async {
@@ -161,21 +160,21 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
                     });
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('워치 앱 실행됨')));
+                          const SnackBar(content: Text('Watch app launched')));
                     }
                   } catch (e) {
                     debugPrint('워치 앱 실행 실패: $e');
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('워치 앱 실행 실패: $e')));
+                          SnackBar(content: Text('Failed to launch watch app: $e')));
                     }
                   }
                 },
-                child: const Text('확인'),
+                child: const Text('OK'),
               ),
               TextButton(
                   onPressed: () => Navigator.pop(dctx),
-                  child: const Text('취소')),
+                  child: const Text('Cancel')),
             ],
           ),
         );
@@ -190,7 +189,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('데이터 조회 실패: $e')));
+              .showSnackBar(SnackBar(content: Text('Failed to fetch data: $e')));
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
@@ -204,7 +203,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text(
-          '일일 리포트',
+          'Daily Report',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         backgroundColor: Colors.white,
@@ -217,7 +216,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
         backgroundColor: const Color(0xFFFB755B),
         icon: const Icon(Icons.monitor_heart, color: Colors.white),
         label: Text(
-          Platform.isIOS ? 'ECG 조회' : 'ECG 측정',
+          Platform.isIOS ? 'Fetch ECG' : 'Measure ECG',
           style: const TextStyle(
               color: Colors.white, fontWeight: FontWeight.bold),
         ),
@@ -246,7 +245,7 @@ class _VitalSignsPageState extends State<VitalSignsPage> {
                     CircularProgressIndicator(color: Color(0xFFFB755B)),
                     SizedBox(height: 16),
                     Text(
-                      '일일 리포트를 갱신하고 있어요\n잠시만 기다려주세요',
+                      'Updating your daily report\nPlease wait a moment',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
@@ -270,7 +269,7 @@ class _EmptyState extends StatelessWidget {
           Icon(Icons.favorite_border, size: 72, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
-            '측정된 바이탈 데이터가 없습니다',
+            'No vital data measured yet',
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey.shade500,
@@ -279,7 +278,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '워치에서 ECG를 측정하면\nSpO2, 심박수, 피부 온도가 표시됩니다',
+            'Measure an ECG on your watch to see\nSpO2, heart rate, and skin temperature',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: Colors.grey.shade400),
           ),
@@ -300,7 +299,8 @@ class _DataView extends StatelessWidget {
     final timeStr = service.lastUpdated != null
         ? DateFormat('yyyy.MM.dd HH:mm').format(service.lastUpdated!)
         : '-';
-    final realSummary = Platform.isAndroid
+    // Android: Samsung Health Data SDK / iOS: HealthKit 수면 요약
+    final realSummary = (Platform.isAndroid || Platform.isIOS)
         ? Provider.of<SamsungHealthService>(context).summary
         : null;
     // 실제 요약이 있어도 에너지/수면 점수가 안 들어오는 경우가 있어
@@ -355,7 +355,7 @@ class _DataView extends StatelessWidget {
             const Icon(Icons.access_time, size: 14, color: Colors.grey),
             const SizedBox(width: 4),
             Text(
-              '마지막 측정: $timeStr',
+              'Last measured: $timeStr',
               style: const TextStyle(fontSize: 13, color: Colors.grey),
             ),
           ],
@@ -374,8 +374,11 @@ class _DataView extends StatelessWidget {
         ],
 
         if (shSummary != null) ...[
-          _EnergyScoreCard(summary: shSummary),
-          const SizedBox(height: 14),
+          // 에너지 점수는 Samsung Health 전용 지표 → iOS(HealthKit)에서는 표시하지 않음
+          if (!Platform.isIOS) ...[
+            _EnergyScoreCard(summary: shSummary),
+            const SizedBox(height: 14),
+          ],
           _SleepScoreCard(summary: shSummary),
           const SizedBox(height: 14),
         ],
@@ -441,7 +444,7 @@ class _WellnessScoreCardState extends State<_WellnessScoreCard> {
             Icon(_actionIcon(result.action), color: color, size: 18),
             const SizedBox(width: 6),
             const Text(
-              '건강 위험도',
+              'Health Risk',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
             ),
             const Spacer(),
@@ -469,7 +472,7 @@ class _WellnessScoreCardState extends State<_WellnessScoreCard> {
             const SizedBox(width: 4),
             const Padding(
               padding: EdgeInsets.only(bottom: 5),
-              child: Text('점', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500)),
+              child: Text('pts', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w500)),
             ),
             const Spacer(),
             Column(
@@ -478,9 +481,9 @@ class _WellnessScoreCardState extends State<_WellnessScoreCard> {
                 if (result.items.containsKey('spo2'))
                   _News2ItemRow(label: 'SpO2', score: result.items['spo2']!),
                 if (result.items.containsKey('hr'))
-                  _News2ItemRow(label: '심박수', score: result.items['hr']!),
+                  _News2ItemRow(label: 'Heart Rate', score: result.items['hr']!),
                 if (result.items.containsKey('skinTemp'))
-                  _News2ItemRow(label: '체온', score: result.items['skinTemp']!),
+                  _News2ItemRow(label: 'Temp', score: result.items['skinTemp']!),
               ],
             ),
           ],
@@ -516,7 +519,7 @@ class _WellnessScoreCardState extends State<_WellnessScoreCard> {
     return _HealthCard(
       icon: Icons.spa,
       iconColor: _accent,
-      title: '건강점수',
+      title: 'Health Score',
       subtitle: 'Vital Signs',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,14 +533,14 @@ class _WellnessScoreCardState extends State<_WellnessScoreCard> {
                     score: score.shortTerm.round(),
                     maxScore: 100,
                     color: _scoreColor(score.shortTerm),
-                    label: '단기 24h',
+                    label: 'Short-term 24h',
                   ),
                   const SizedBox(height: 12),
                   _BigScoreCircle(
                     score: score.longTerm.round(),
                     maxScore: 100,
                     color: _scoreColor(score.longTerm),
-                    label: '장기 28일',
+                    label: 'Long-term 28d',
                   ),
                 ],
               ),
@@ -554,21 +557,21 @@ class _WellnessScoreCardState extends State<_WellnessScoreCard> {
                     ),
                     _SubMetricRow(
                       icon: Icons.favorite,
-                      label: '심박수',
+                      label: 'Heart Rate',
                       value: widget.hr != null ? '${widget.hr!.round()} bpm' : '--',
                       color: const Color(0xFFFB755B),
                     ),
                     _SubMetricRow(
                       icon: Icons.thermostat,
-                      label: '체온',
+                      label: 'Temperature',
                       value: widget.temp != null ? '${widget.temp!.toStringAsFixed(1)}°C' : '--',
                       color: const Color(0xFFFF9500),
                     ),
                     _SubMetricRow(
                       icon: Icons.groups,
                       label: 'baseline',
-                      value: score.usingPersonalBaseline ? '개인 기준' : '인구 기준',
-                      note: score.usingPersonalBaseline ? '개인 baseline 적용 중' : '7일 누적 시 개인화',
+                      value: score.usingPersonalBaseline ? 'Personal' : 'Population',
+                      note: score.usingPersonalBaseline ? 'Using personal baseline' : 'Personalizes after 7 days',
                       color: score.usingPersonalBaseline
                           ? const Color(0xFF34C759)
                           : const Color(0xFFFF9500),
@@ -663,7 +666,7 @@ class _EnergyScoreCardState extends State<_EnergyScoreCard> {
     return _HealthCard(
       icon: Icons.bolt,
       iconColor: _accent,
-      title: '에너지 점수',
+      title: 'Energy Score',
       subtitle: 'Samsung Health',
       child: Row(
         children: [
@@ -672,7 +675,7 @@ class _EnergyScoreCardState extends State<_EnergyScoreCard> {
             score: score?.toInt(),
             maxScore: 100,
             color: score != null ? _scoreColor(score) : Colors.grey.shade300,
-            label: '오늘',
+            label: 'Today',
           ),
           const SizedBox(width: 20),
           // 서브 메트릭 목록 (실제 측정 value)
@@ -682,26 +685,26 @@ class _EnergyScoreCardState extends State<_EnergyScoreCard> {
               children: [
                 _SubMetricRow(
                   icon: Icons.directions_run,
-                  label: '활동',
-                  value: '어제 활동량 기반',
+                  label: 'Activity',
+                  value: 'Based on yesterday\'s activity',
                   color: const Color(0xFF34C759),
                 ),
                 _SubMetricRow(
                   icon: Icons.bedtime,
-                  label: '수면',
+                  label: 'Sleep',
                   value: totalSleep != null ? widget.summary.totalSleepStr : '--',
                   color: const Color(0xFF5E9BF0),
                 ),
                 _SubMetricRow(
                   icon: Icons.favorite,
-                  label: '수면 중 HR',
+                  label: 'Sleep HR',
                   value: sleepHR != null ? '${sleepHR.toStringAsFixed(0)} bpm' : '--',
                   color: const Color(0xFFFB755B),
                 ),
                 _SubMetricRow(
                   icon: Icons.waves,
-                  label: '수면 중 HRV',
-                  value: '${_mockSleepHrv.toStringAsFixed(0)} ms',
+                  label: 'Sleep HRV',
+                  value: '--',
                   color: const Color(0xFFFF9500),
                 ),
               ],
@@ -747,8 +750,8 @@ class _SleepScoreCardState extends State<_SleepScoreCard> {
     return _HealthCard(
       icon: Icons.bedtime,
       iconColor: _accent,
-      title: '수면 점수',
-      subtitle: 'Samsung Health',
+      title: 'Sleep Score',
+      subtitle: Platform.isIOS ? 'Apple Health' : 'Samsung Health',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -759,7 +762,7 @@ class _SleepScoreCardState extends State<_SleepScoreCard> {
                 score: s.sleepScore,
                 maxScore: 100,
                 color: s.sleepScore != null ? _scoreColor(s.sleepScore!) : Colors.grey.shade300,
-                label: '어젯밤',
+                label: 'Last night',
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -774,12 +777,12 @@ class _SleepScoreCardState extends State<_SleepScoreCard> {
                       const SizedBox(height: 10),
                     ],
                     Text(
-                      '총 수면  ${s.totalSleepStr}',
+                      'Total sleep  ${s.totalSleepStr}',
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '딥슬립 ${deepPct.toStringAsFixed(0)}%  ·  REM ${remPct.toStringAsFixed(0)}%  ·  주기 ${s.sleepCycleCount ?? 0}회',
+                      'Deep ${deepPct.toStringAsFixed(0)}%  ·  REM ${remPct.toStringAsFixed(0)}%  ·  Cycles ${s.sleepCycleCount ?? 0}',
                       style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                     ),
                   ],
@@ -791,28 +794,28 @@ class _SleepScoreCardState extends State<_SleepScoreCard> {
 
           // 5개 서브컴포넌트 — 실제 측정 value
           _SleepSubRow(
-            label: '총 수면 시간',
+            label: 'Total sleep time',
             value: s.totalSleepStr,
             color: const Color(0xFF5E9BF0),
           ),
           _SleepSubRow(
-            label: '수면 주기',
-            value: '${s.sleepCycleCount ?? 0}회',
+            label: 'Sleep cycles',
+            value: '${s.sleepCycleCount ?? 0}',
             color: _accent,
           ),
           _SleepSubRow(
-            label: '깨거나 뒤척임',
-            value: '$awake분',
+            label: 'Awake / restless',
+            value: '$awake min',
             color: const Color(0xFFFF9500),
           ),
           _SleepSubRow(
-            label: '신체 회복 (딥슬립)',
-            value: '${deepPct.toStringAsFixed(0)}% · $deep분',
+            label: 'Physical recovery (Deep)',
+            value: '${deepPct.toStringAsFixed(0)}% · $deep min',
             color: const Color(0xFF34C759),
           ),
           _SleepSubRow(
-            label: '정신 회복 (REM)',
-            value: '${remPct.toStringAsFixed(0)}% · $rem분',
+            label: 'Mental recovery (REM)',
+            value: '${remPct.toStringAsFixed(0)}% · $rem min',
             color: const Color(0xFFFB755B),
           ),
         ],
@@ -1058,10 +1061,10 @@ class _SleepStageBar extends StatelessWidget {
         const SizedBox(height: 4),
         Row(
           children: [
-            _LegendDot(color: const Color(0xFF3478F6), label: '딥'),
+            _LegendDot(color: const Color(0xFF3478F6), label: 'Deep'),
             _LegendDot(color: const Color(0xFF7B61FF), label: 'REM'),
-            _LegendDot(color: const Color(0xFF5AC8FA), label: '라이트'),
-            _LegendDot(color: Colors.grey.shade300, label: '각성'),
+            _LegendDot(color: const Color(0xFF5AC8FA), label: 'Light'),
+            _LegendDot(color: Colors.grey.shade300, label: 'Awake'),
           ],
         ),
       ],

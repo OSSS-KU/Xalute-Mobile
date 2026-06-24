@@ -259,7 +259,7 @@ class EcgDataService extends ChangeNotifier {
         final samplingRate = (item['samplingRate'] as num?)?.toInt() ?? 512;
 
         final timestamp = dateTime.millisecondsSinceEpoch;
-        final resultKey = resultStr == '정상' ? 'normal' : 'abnormal';
+        final resultKey = resultStr == 'Normal' ? 'normal' : 'abnormal';
         final txtPath = '${dir.path}/ecg_${timestamp}_$resultKey.txt';
         final jsonPath = '${dir.path}/ecg_${timestamp}_$resultKey.json';
 
@@ -278,7 +278,7 @@ class EcgDataService extends ChangeNotifier {
         // HealthKit에는 r_peaks/distance 정보가 없으므로 빈 JSON
         await File(jsonPath).writeAsString('{}');
 
-        final color = resultStr.contains('이상') ? const Color(0xFFFB755B) : Colors.grey[700]!;
+        final color = resultStr == 'Abnormality suspected' ? const Color(0xFFFB755B) : Colors.grey[700]!;
         _entries.add(EcgEntry(
           dateTime: dateTime,
           result: resultStr,
@@ -291,7 +291,7 @@ class EcgDataService extends ChangeNotifier {
       }
       notifyListeners();
     } on PlatformException catch (e) {
-      throw 'HealthKit 요청 실패: ${e.message}';
+      throw 'HealthKit request failed: ${e.message}';
     }
   }
 
@@ -316,9 +316,9 @@ class EcgDataService extends ChangeNotifier {
         final resultStr = parts[2].replaceAll('.txt', '');
 
         final timestamp = DateTime.fromMillisecondsSinceEpoch(int.parse(timestampStr));
-        final result = resultStr == 'normal' ? '정상'
-            : resultStr == 'abnormal' ? '이상 소견 의심'
-            : '분석 중';
+        final result = resultStr == 'normal' ? 'Normal'
+            : resultStr == 'abnormal' ? 'Abnormality suspected'
+            : 'Analyzing';
         final color = resultStr == 'normal' ? Colors.grey[700]!
             : resultStr == 'abnormal' ? const Color(0xFFFB755B)
             : Colors.grey;
@@ -376,7 +376,7 @@ class EcgDataService extends ChangeNotifier {
       final insertId = item['insertId'] as String? ?? item['id'] as String? ?? '';
 
       final resultKey = abnormal == 0 ? 'normal' : abnormal == 1 ? 'abnormal' : 'unknown';
-      final result = abnormal == 0 ? '정상' : abnormal == 1 ? '이상 소견 의심' : '분석 중';
+      final result = abnormal == 0 ? 'Normal' : abnormal == 1 ? 'Abnormality suspected' : 'Analyzing';
       final color = abnormal == 0 ? Colors.grey[700]!
           : abnormal == 1 ? const Color(0xFFFB755B)
           : Colors.grey;

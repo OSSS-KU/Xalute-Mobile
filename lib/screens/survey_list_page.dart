@@ -25,9 +25,9 @@ class _SurveyListPageState extends State<SurveyListPage> {
   // Firebase 토큰 가져오기 (ecg_page.dart 로직 참고)
   Future<String> _getIdToken() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception("로그인이 필요합니다.");
+    if (user == null) throw Exception("Login required.");
     final token = await user.getIdToken();
-    if (token == null) throw Exception("토큰을 가져오는데 실패했습니다.");
+    if (token == null) throw Exception("Failed to get token.");
     return token;
   }Future<void> _fetchSurveyList() async {
     print("로그: 설문 리스트 불러오기 시작"); // 확인용 로그
@@ -66,7 +66,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
       print("로그: 에러 발생 상세내용 -> $e"); // 콘솔에 에러 내용 출력
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("오류 발생: $e")),
+          SnackBar(content: Text("An error occurred: $e")),
         );
       }
     } finally {
@@ -80,7 +80,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
       backgroundColor: const Color(0xFFFAFBFF),
       appBar: AppBar(
         title: const Text(
-          "설문 참여 기록",
+          "Survey History",
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -144,7 +144,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
                       Icon(Icons.add_circle_outline, color: Colors.white),
                       SizedBox(width: 8),
                       Text(
-                        "새로운 설문조사 시작하기",
+                        "Start a new survey",
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -171,7 +171,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
           Icon(Icons.assignment_late_outlined, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            "참여한 설문 기록이 없습니다.",
+            "No survey records yet.",
             style: TextStyle(fontSize: 16, color: Colors.grey[600]),
           ),
         ],
@@ -183,7 +183,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
   Widget _buildSurveyItem(Map<String, dynamic> survey) {
     // 날짜 포맷팅 (2026-03-02T13:30:42.963Z -> 2026년 3월 2일 22:30)
     DateTime createdAt = DateTime.parse(survey['createdAt']).toLocal();
-    String formattedDate = DateFormat('yyyy년 MM월 dd일 HH:mm').format(createdAt);
+    String formattedDate = DateFormat('yyyy.MM.dd HH:mm', 'en_US').format(createdAt);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -205,7 +205,7 @@ class _SurveyListPageState extends State<SurveyListPage> {
           child: Icon(Icons.description, color: Color(0xFFFB755B)),
         ),
         title: const Text(
-          "건강 설문조사 완료",
+          "Health survey completed",
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         subtitle: Padding(
@@ -258,27 +258,27 @@ class _SurveyListPageState extends State<SurveyListPage> {
 
               final int score = smokingScore + drinkingScore + activityScore + bScore;
 
-              String status = "좋음";
+              String status = "Excellent";
               Color statusColor = Colors.green;
               if (score < 40) {
-                status = "위험";
+                status = "At risk";
                 statusColor = Colors.red;
               } else if (score < 60) {
-                status = "주의";
+                status = "Caution";
                 statusColor = Colors.orange;
               } else if (score < 80) {
-                status = "양호";
+                status = "Good";
                 statusColor = Colors.blue;
               }
 
               return AlertDialog(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: const Text("설문 결과 분석", style: TextStyle(fontWeight: FontWeight.bold)),
+                title: const Text("Survey Result Analysis", style: TextStyle(fontWeight: FontWeight.bold)),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text("당시 기록된 데이터를 바탕으로 산출된"),
-                    const Text("나의 건강 점수입니다."),
+                    const Text("Your health score, calculated from"),
+                    const Text("the data recorded at that time."),
                     const SizedBox(height: 20),
                     // 점수 디자인... (이전 코드와 동일)
                     Container(
@@ -290,33 +290,33 @@ class _SurveyListPageState extends State<SurveyListPage> {
                       child: Column(
                         children: [
                           Text("$score", style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: statusColor)),
-                          Text("점", style: TextStyle(fontSize: 18, color: statusColor)),
+                          Text("pts", style: TextStyle(fontSize: 18, color: statusColor)),
                         ],
                       ),
                     ),
                     const SizedBox(height: 15),
-                    Text("상태: $status", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: statusColor)),
+                    Text("Status: $status", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: statusColor)),
                     const Divider(height: 30),
-                    _buildDetailRow("키/몸무게", "${data['height'] ?? '-'}cm / ${data['weight'] ?? '-'}kg"),
-                    _buildDetailRow("흡연 점수", "+$smokingScore점"),
-                    _buildDetailRow("음주 점수", "+$drinkingScore점"),
-                    _buildDetailRow("신체활동 점수", "+$activityScore점"),
-                    _buildDetailRow("BMI 점수", "+${bScore}점"),
+                    _buildDetailRow("Height/Weight", "${data['height'] ?? '-'}cm / ${data['weight'] ?? '-'}kg"),
+                    _buildDetailRow("Smoking score", "+$smokingScore pts"),
+                    _buildDetailRow("Drinking score", "+$drinkingScore pts"),
+                    _buildDetailRow("Physical activity score", "+$activityScore pts"),
+                    _buildDetailRow("BMI score", "+${bScore} pts"),
                   ],
                 ),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text("닫기"))
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))
                 ],
               );
             } catch (e) {
               // 에러 발생 시 콘솔에 어떤 에러인지 출력합니다.
               print("데이터 파싱 에러 발생: $e");
               return AlertDialog(
-                content: Text("데이터 해석 중 오류가 발생했습니다.\n에러 내용: $e"),
+                content: Text("An error occurred while parsing data.\nError: $e"),
               );
             }
           }
-          return const AlertDialog(content: Text("데이터를 불러올 수 없습니다."));
+          return const AlertDialog(content: Text("Unable to load data."));
         },
       ),
     );

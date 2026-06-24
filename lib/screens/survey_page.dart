@@ -125,7 +125,7 @@ class _SurveyPageState extends State<SurveyPage> {
       if (currentStep == 0){
         if(state.smoking == -1)
           {
-            showMessage(context, "문항을 선택해주세요");
+            showMessage(context, "Please select an option");
             return null;
           }
         else
@@ -136,7 +136,7 @@ class _SurveyPageState extends State<SurveyPage> {
       } else if (currentStep == 1){
         if(state.drinking == -1)
         {
-          showMessage(context, "문항을 선택해주세요");
+          showMessage(context, "Please select an option");
           return null;
         }
         else
@@ -147,7 +147,7 @@ class _SurveyPageState extends State<SurveyPage> {
       } else if (currentStep == 2){
         if(state.height == 0 || state.weight == 0)
         {
-          showMessage(context, "값을 입력해주세요");
+          showMessage(context, "Please enter a value");
           return null;
         }
         else
@@ -158,7 +158,7 @@ class _SurveyPageState extends State<SurveyPage> {
       } else if (currentStep == 3){
         if(state.activity == -1)
         {
-          showMessage(context, "문항을 선택해주세요");
+          showMessage(context, "Please select an option");
           return null;
         }
         else
@@ -209,9 +209,9 @@ class _SurveyPageState extends State<SurveyPage> {
   // 2. Firebase ID 토큰을 가져오는 함수 추가 (EcgPage와 동일 로직)
   Future<String> _getIdToken() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception("로그인이 필요합니다.");
+    if (user == null) throw Exception("Login required.");
     final token = await user.getIdToken();
-    if (token == null) throw Exception("토큰을 가져올 수 없습니다.");
+    if (token == null) throw Exception("Unable to get token.");
     return token;
   }
 
@@ -271,7 +271,7 @@ class _SurveyPageState extends State<SurveyPage> {
                   Icon(Icons.check_circle_outline, color: Color(0xFFFB755B), size: 60),
                   SizedBox(height: 16),
                   Text(
-                    "설문이 성공적으로 업로드되었습니다.",
+                    "Survey uploaded successfully.",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -291,7 +291,7 @@ class _SurveyPageState extends State<SurveyPage> {
         }
       } else {
         // 서버 에러 응답 처리
-        throw Exception("서버 응답 오류: ${response.statusCode}");
+        throw Exception("Server response error: ${response.statusCode}");
       }
     } catch (e) {
       // 로딩 다이얼로그가 떠 있다면 닫기
@@ -299,7 +299,7 @@ class _SurveyPageState extends State<SurveyPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("제출 실패: $e")),
+          SnackBar(content: Text("Submission failed: $e")),
         );
       }
     }
@@ -312,10 +312,10 @@ class _SurveyPageState extends State<SurveyPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("제출 완료"),
-        content: const Text("설문이 완료되었습니다."),
+        title: const Text("Submission complete"),
+        content: const Text("The survey has been completed."),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("확인")),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
         ],
       ),
     );
@@ -349,7 +349,7 @@ class _SurveyPageState extends State<SurveyPage> {
       child: Scaffold(
       backgroundColor: const Color(0xFFFAFBFF),
       appBar: AppBar(
-        title: const Text("건강 설문조사", style: TextStyle(color: Colors.black)),
+        title: const Text("Health Survey", style: TextStyle(color: Colors.black)),
         backgroundColor: Colors.white,
         elevation: 0,
         leading: currentStep > 0
@@ -408,9 +408,9 @@ class _SurveyPageState extends State<SurveyPage> {
                       ),
                     ),
                     const TextSpan(
-                      text: ' 앱을 처음 사용하시나요?\n저희 앱은 만성질환 예방 및 관리를 위해 검진과 상담을 제공하고 있습니다.\n\n'
-                          '본 설문지는 건강관리 서비스를 제공해 드리기 위한 기초자료로 향후 상담에 소중한 자료가 될 것입니다. '
-                          '다음 문항들에 대하여 해당하는 부분에 대해 설문을 참여해 주세요.',
+                      text: ' is this your first time using our app?\nOur app provides checkups and consultations to help prevent and manage chronic diseases.\n\n'
+                          'This survey serves as baseline data for providing health management services and will be a valuable reference for future consultations. '
+                          'Please answer the following questions where applicable.',
                     ),
                   ],
                 ),
@@ -420,7 +420,7 @@ class _SurveyPageState extends State<SurveyPage> {
         );
       case -1:
         return _questionWrapper(
-          title: "1. 과거 치료받은 적이 있거나 현재 치료 중인 질환을 선택해주세요.",
+          title: "1. Select any conditions you have been treated for in the past or are currently being treated for.",
           child: Column(
             children: [
               _buildDiseaseList(), // 기존 질병 체크박스 리스트
@@ -435,31 +435,31 @@ class _SurveyPageState extends State<SurveyPage> {
         );
       case 0:
         return _buildDynamicQuestion<int>(
-          question: "2. 다음 중 본인의 흡연량에 해당하는 문항을 골라주세요",
+          question: "2. Select the option that matches your smoking history",
           groupValue: state.smoking,
           options: [
-            {"title": "피워본 적 없다", "value": 25},
-            {"title": "금연 1년 이상", "value": 15},
-            {"title": "금연 1년 미만", "value": 5},
-            {"title": "현재 흡연", "value": 0},
+            {"title": "Never smoked", "value": 25},
+            {"title": "Quit 1+ years ago", "value": 15},
+            {"title": "Quit less than 1 year ago", "value": 5},
+            {"title": "Currently smoking", "value": 0},
           ],
           onChanged: (val) => setState(() => state.smoking = val!),
         );
       case 1:
         return _buildDynamicQuestion<int>(
-          question: "3. 다음 중 본인의 음주 빈도에 해당하는 문항을 골라주세요",
+          question: "3. Select the option that matches your drinking frequency",
           groupValue: state.drinking,
           options: [
-            {"title": "전혀 마시지 않음 또는 월 1회 미만", "value": 25},
-            {"title": "저위험 음주 (주 1~2회, 1회 1~4잔)", "value": 15},
-            {"title": "중위험 음주 (주 1~2회, 1회 5~9잔)", "value": 10},
-            {"title": "고위험 음주 (주 3회 이상)", "value": 5},
+            {"title": "Never, or less than once a month", "value": 25},
+            {"title": "Low risk (1-2x/week, 1-4 drinks each)", "value": 15},
+            {"title": "Moderate risk (1-2x/week, 5-9 drinks each)", "value": 10},
+            {"title": "High risk (3+ times a week)", "value": 5},
           ],
           onChanged: (val) => setState(() => state.drinking = val!),
         );
       case 2:
         return _buildHeightWeightQuestion(
-          question: "4. 키와 몸무게를 입력해주세요",
+          question: "4. Enter your height and weight",
           // double 데이터를 String으로 변환 (0일 경우 빈 문자열 표시)
           heightValue: state.height == 0 ? "" : state.height.toInt().toString(),
           weightValue: state.weight == 0 ? "" : state.weight.toInt().toString(),
@@ -469,13 +469,13 @@ class _SurveyPageState extends State<SurveyPage> {
         );
       case 3:
         return _buildDynamicQuestion<int>(
-          question: "5. 다음 중 본인에게 해당되는 활동량을 골라주세요",
+          question: "5. Select the activity level that applies to you",
           groupValue: state.activity,
           options: [
-            {"title": "주 150분 이상 또는 75분의 고강도 유산소 활동 이상", "value": 25},
-            {"title": "주 75분-150분의 중강도 또는 30-75분의 고강도 유산소 활동", "value": 15},
-            {"title": "규칙적인 활동을 하나 위 조건에 미치지 못하는 경우", "value": 5},
-            {"title": "비활동", "value": 0},
+            {"title": "150+ min/week, or 75+ min of vigorous aerobic activity", "value": 25},
+            {"title": "75-150 min/week moderate, or 30-75 min vigorous aerobic activity", "value": 15},
+            {"title": "Regular activity but below the above thresholds", "value": 5},
+            {"title": "Inactive", "value": 0},
           ],
           onChanged: (val) => setState(() => state.activity = val!),
         );
@@ -508,7 +508,7 @@ class _SurveyPageState extends State<SurveyPage> {
             TextSpan(
               children: [
                 TextSpan(
-                  text: '${userName}님의\n건강점수는 ',
+                  text: '${userName}\'s\nhealth score is ',
                   style: TextStyle(
                     color: Color(0xFF212121), // 기본 검정색 계열
                   ),
@@ -520,7 +520,7 @@ class _SurveyPageState extends State<SurveyPage> {
                   ),
                 ),
                 const TextSpan(
-                  text: '점입니다',
+                  text: ' pts',
                   style: TextStyle(
                     color: Color(0xFF212121),
                   ),
@@ -537,19 +537,19 @@ class _SurveyPageState extends State<SurveyPage> {
           const SizedBox(height: 32),
 
           // 상세 점수 내역 리스트
-          _buildScoreRow("흡연 점수", "+$smokingScore점"),
+          _buildScoreRow("Smoking score", "+$smokingScore pts"),
           const SizedBox(height: 36), // 가이드의 gap 24px
-          _buildScoreRow("음주 점수", "+$drinkingScore점"),
+          _buildScoreRow("Drinking score", "+$drinkingScore pts"),
           const SizedBox(height: 36), // 가이드의 gap 24px
-          _buildScoreRow("BMI 점수", "+$bmiScore점"),
+          _buildScoreRow("BMI score", "+$bmiScore pts"),
           const SizedBox(height: 36), // 가이드의 gap 24px
-          _buildScoreRow("신체활동 점수", "+$activityScore점"),
+          _buildScoreRow("Physical activity score", "+$activityScore pts"),
           const SizedBox(height: 36), // 가이드의 gap 24px
 
         ],
       );
       default:
-        return const Center(child: Text("설문 내용을 모두 확인했습니다."));
+        return const Center(child: Text("You have reviewed all survey items."));
 
     }
   }
@@ -616,7 +616,7 @@ class _SurveyPageState extends State<SurveyPage> {
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFB755B)),
           onPressed: _nextStep,
-          child: Text(isLast ? "제출하기" : "다음", style: const TextStyle(color: Colors.white, fontSize: 20)),
+          child: Text(isLast ? "Submit" : "Next", style: const TextStyle(color: Colors.white, fontSize: 20)),
         ),
       ),
     );
@@ -675,10 +675,20 @@ class _SurveyPageState extends State<SurveyPage> {
   }
 
   Widget _buildDiseaseList() {
-    final diseaseOptions = ["고혈압", "당뇨병", "이상지질혈증", "뇌졸중", "관상동맥질환", "만성콩팥병"];
+    // disease_code(서버 전송값)는 그대로 두고 표시용 라벨만 영어로 보여준다.
+    final diseaseOptions = <Map<String, String>>[
+      {"code": "고혈압", "label": "Hypertension"},
+      {"code": "당뇨병", "label": "Diabetes"},
+      {"code": "이상지질혈증", "label": "Dyslipidemia"},
+      {"code": "뇌졸중", "label": "Stroke"},
+      {"code": "관상동맥질환", "label": "Coronary artery disease"},
+      {"code": "만성콩팥병", "label": "Chronic kidney disease"},
+    ];
 
     return Column(
-      children: diseaseOptions.map((name) {
+      children: diseaseOptions.map((option) {
+        final name = option["code"]!;
+        final label = option["label"]!;
         // 해당 질환이 리스트에 있는지 확인
         int diseaseIndex = state.diseaseHistory.indexWhere((d) => d.disease_code == name);
         bool isSelected = diseaseIndex != -1;
@@ -686,7 +696,7 @@ class _SurveyPageState extends State<SurveyPage> {
         return Column(
           children: [
             CheckboxListTile(
-              title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
               value: isSelected,
               onChanged: (bool? checked) {
                 setState(() {
@@ -707,16 +717,16 @@ class _SurveyPageState extends State<SurveyPage> {
                 child: Column(
                   children: [
                     // 각 항목을 체크박스로 변경
-                    _buildSubDetailCheckbox("의사 진단 여부", state.diseaseHistory[diseaseIndex].doctor_diagnosed, (v) {
+                    _buildSubDetailCheckbox("Diagnosed by a doctor", state.diseaseHistory[diseaseIndex].doctor_diagnosed, (v) {
                       setState(() => state.diseaseHistory[diseaseIndex].doctor_diagnosed = v!);
                     }),
-                    _buildSubDetailCheckbox("약물 처방 여부", state.diseaseHistory[diseaseIndex].has_prescription, (v) {
+                    _buildSubDetailCheckbox("Has a prescription", state.diseaseHistory[diseaseIndex].has_prescription, (v) {
                       setState(() => state.diseaseHistory[diseaseIndex].has_prescription = v!);
                     }),
-                    _buildSubDetailCheckbox("약 복용 여부", state.diseaseHistory[diseaseIndex].med_intake, (v) {
+                    _buildSubDetailCheckbox("Taking medication", state.diseaseHistory[diseaseIndex].med_intake, (v) {
                       setState(() => state.diseaseHistory[diseaseIndex].med_intake = v!);
                     }),
-                    _buildSubDetailCheckbox("규칙적 복용(월 20일 이상)", state.diseaseHistory[diseaseIndex].regular_med_intake, (v) {
+                    _buildSubDetailCheckbox("Takes regularly (20+ days/month)", state.diseaseHistory[diseaseIndex].regular_med_intake, (v) {
                       setState(() => state.diseaseHistory[diseaseIndex].regular_med_intake = v!);
                     }),
 
@@ -726,7 +736,7 @@ class _SurveyPageState extends State<SurveyPage> {
                       child: Row(
                         children: [
                           const Text(
-                            "질병이 지속된 기간: ",
+                            "Duration of illness: ",
                             style: TextStyle(color: Colors.black, fontSize: 15),
                           ),
                           const SizedBox(width: 10),
@@ -754,7 +764,7 @@ class _SurveyPageState extends State<SurveyPage> {
                             ),
                           ),
                           const Text(
-                            " 년",
+                            " yrs",
                             style: TextStyle(color: Colors.black, fontSize: 15),
                           ),
                         ],
@@ -791,7 +801,7 @@ class _SurveyPageState extends State<SurveyPage> {
       child: TextField(
         style: const TextStyle(fontSize: 15),
         decoration: const InputDecoration(
-          labelText: "기타 질환을 입력하세요.(갑상선, 간질환 등)",
+          labelText: "Enter other conditions (e.g. thyroid, liver disease)",
           labelStyle: TextStyle(fontSize: 15),
           border: OutlineInputBorder(),
         ),
@@ -809,7 +819,7 @@ class _SurveyPageState extends State<SurveyPage> {
       child: TextField(
         style: const TextStyle(fontSize: 15),
         decoration: const InputDecoration(
-          labelText: "가족력이 있는 질환을 입력하세요",
+          labelText: "Enter any family history of disease",
           labelStyle: TextStyle(fontSize: 15),
           border: OutlineInputBorder(),
         ),
@@ -824,7 +834,7 @@ class _SurveyPageState extends State<SurveyPage> {
         child: TextField(
             style: const TextStyle(fontSize: 15),
             decoration: const InputDecoration(
-              labelText: "평소에 드시는 약이 있으면 입력하세요",
+              labelText: "Enter any medications you usually take",
               labelStyle: TextStyle(fontSize: 15),
               border: OutlineInputBorder(),
             ),
@@ -869,9 +879,9 @@ class _SurveyPageState extends State<SurveyPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center, // 가운데 정렬
         children: [
-          const Text("키 : ", style: TextStyle(fontSize: 15)),
+          const Text("Height: ", style: TextStyle(fontSize: 15)),
           _buildUnderlineInput(width: 60, value: heightValue, onChanged: onHeightChanged),
-          const Text("      몸무게 : ", style: TextStyle(fontSize: 15)),
+          const Text("      Weight: ", style: TextStyle(fontSize: 15)),
           _buildUnderlineInput(width: 60, value: weightValue, onChanged: onWeightChanged),
         ],
       ),

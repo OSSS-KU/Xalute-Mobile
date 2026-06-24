@@ -51,7 +51,7 @@ class _EcgPageState extends State<EcgPage> {
     final vitalService = Provider.of<VitalSignsService>(context);
     final dailyStore = Provider.of<DailyReportStore>(context);
     final longTermScore = vitalService.wellnessScore?.longTerm;
-    final scoreText = longTermScore != null ? '${longTermScore.round()}점' : '--점';
+    final scoreText = longTermScore != null ? '${longTermScore.round()} pts' : '-- pts';
     final selected = selectedDay ?? DateTime.now();
     final normalizedSelected = DateTime.utc(
         selected.year, selected.month, selected.day);
@@ -63,7 +63,7 @@ class _EcgPageState extends State<EcgPage> {
         entry.dateTime.month == focusedDay.month)
         .toList();
     final abnormalMonthTotal = monthResults
-        .where((e) => e.result == '이상 소견 의심')
+        .where((e) => e.result == 'Abnormality suspected')
         .length;
 
     if (ecgService.isLoading) {
@@ -92,7 +92,7 @@ class _EcgPageState extends State<EcgPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "${ecgService.userName}님의",
+                                "${ecgService.userName}'s",
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 24,
@@ -105,7 +105,7 @@ class _EcgPageState extends State<EcgPage> {
                               Row(
                                 children: [
                                   Text(
-                                    "건강점수는 $scoreText",
+                                    "Health score is $scoreText",
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 24,
@@ -117,7 +117,7 @@ class _EcgPageState extends State<EcgPage> {
                                   SizedBox(width: 6),
                                 ],
                               ),
-                              const Text("건강한 하루 보내세요",
+                              const Text("Have a healthy day",
                                   style: TextStyle(
                                       fontWeight: FontWeight.w400,
                                       fontSize: 13,
@@ -143,7 +143,7 @@ class _EcgPageState extends State<EcgPage> {
                         Row(
                           children: [
                             Text(
-                              "${focusedDay.year}년 ${focusedDay.month}월",
+                              DateFormat('MMMM yyyy', 'en_US').format(focusedDay),
                               style: const TextStyle(
                                   fontSize: 20, fontWeight: FontWeight.bold),
                             ),
@@ -171,7 +171,7 @@ class _EcgPageState extends State<EcgPage> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.refresh),
-                          tooltip: '새로고침',
+                          tooltip: 'Refresh',
                           onPressed: _refreshCalendarData,
                         ),
                       ],
@@ -189,15 +189,15 @@ class _EcgPageState extends State<EcgPage> {
                         children: [
                           Column(children: [
                             const Text(
-                                "총 측정횟수", style: TextStyle(fontSize: 14)),
-                            Text("${monthResults.length}회",
+                                "Total measurements", style: TextStyle(fontSize: 14)),
+                            Text("${monthResults.length}",
                                 style: const TextStyle(
                                     fontSize: 16, fontWeight: FontWeight.bold))
                           ]),
                           Column(children: [
                             const Text(
-                                "이상 소견 의심", style: TextStyle(fontSize: 14)),
-                            Text("$abnormalMonthTotal회", style: const TextStyle(
+                                "Abnormality suspected", style: TextStyle(fontSize: 14)),
+                            Text("$abnormalMonthTotal", style: const TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.bold))
                           ])
                         ],
@@ -244,7 +244,7 @@ class _EcgPageState extends State<EcgPage> {
                         final statuses = ecgService.statusMap[normalized];
                         if (statuses == null) return null;
                         final abnormalCount = statuses
-                            .where((e) => e == '이상 소견 의심')
+                            .where((e) => e == 'Abnormality suspected')
                             .length;
                         final totalCount = statuses.length;
                         return Column(
@@ -276,7 +276,7 @@ class _EcgPageState extends State<EcgPage> {
                         final statuses = ecgService.statusMap[normalized];
                         final hasData = statuses != null;
                         final abnormalCount = hasData ? statuses!.where((
-                            e) => e == '이상 소견 의심').length : 0;
+                            e) => e == 'Abnormality suspected').length : 0;
                         final totalCount = hasData ? statuses.length : 0;
 
                         return Column(
@@ -319,11 +319,11 @@ class _EcgPageState extends State<EcgPage> {
                       children: [
                         Icon(Icons.circle, color: Color(0xFFFB755B), size: 8),
                         SizedBox(width: 4),
-                        Text("이상 소견 의심", style: TextStyle(fontSize: 12)),
+                        Text("Abnormality suspected", style: TextStyle(fontSize: 12)),
                         SizedBox(width: 16),
                         Icon(Icons.circle, color: Colors.grey, size: 8),
                         SizedBox(width: 4),
-                        Text("전체 측정 횟수", style: TextStyle(fontSize: 12)),
+                        Text("Total measurements", style: TextStyle(fontSize: 12)),
                       ],
                     ),
                   ),
@@ -340,7 +340,7 @@ class _EcgPageState extends State<EcgPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(
                       children: selectedResults.map((entry) {
-                        final formatted = DateFormat('M월 d일 HH시 mm분').format(
+                        final formatted = DateFormat('MMM d, HH:mm', 'en_US').format(
                             entry.dateTime);
                         return InkWell(
                           onTap: () {
@@ -365,7 +365,7 @@ class _EcgPageState extends State<EcgPage> {
                                       ecgService.diagnosisResultFor(entry),
                                       style: TextStyle(
                                         fontSize: 14,
-                                        color: ecgService.diagnosisResultFor(entry) == '이상 소견 의심'
+                                        color: ecgService.diagnosisResultFor(entry) == 'Abnormality suspected'
                                             ? const Color(0xFFFB755B)
                                             : Colors.grey[600],
                                       ),
@@ -456,7 +456,7 @@ class _DailyScoreSummary extends StatelessWidget {
             Icon(Icons.bar_chart, size: 18, color: Colors.grey.shade400),
             const SizedBox(width: 8),
             Text(
-              '이 날의 점수 기록이 없어요',
+              'No score records for this day',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
             ),
           ],
@@ -476,7 +476,7 @@ class _DailyScoreSummary extends StatelessWidget {
               const Icon(Icons.bar_chart, size: 18, color: Color(0xFFFB755B)),
               const SizedBox(width: 8),
               Text(
-                '${DateFormat('M월 d일').format(day)} 점수 요약',
+                '${DateFormat('MMM d', 'en_US').format(day)} Score Summary',
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ],
@@ -484,34 +484,32 @@ class _DailyScoreSummary extends StatelessWidget {
           const SizedBox(height: 14),
           Builder(
             builder: (context) {
-              // 에너지/수면 점수가 아직 없으면 적당한 값으로 채워서 보여준다(임시).
-              // 날짜 기반 결정적 변동을 줘서 매번 같은 값이 나오도록 한다.
-              final baseScore = r.wellShort ?? 75;
-              final seed = day.day + day.month * 31;
-              final energy = r.energy ?? (baseScore + ((seed % 11) - 5)).clamp(0, 100).toDouble();
-              final sleep = r.sleep ?? (baseScore + ((seed % 9) - 3)).clamp(0, 100).round();
+              final energy = r.energy;
+              final sleep = r.sleep;
               return Row(
                 children: [
                   Expanded(
                     child: _metric(
-                      '건강 점수',
-                      r.wellShort == null ? '--' : '${r.wellShort!.round()}점',
+                      'Health Score',
+                      r.wellShort == null ? '--' : '${r.wellShort!.round()} pts',
                       _scoreColor(r.wellShort),
                       dim: r.wellShort == null,
                     ),
                   ),
                   Expanded(
                     child: _metric(
-                      '에너지',
-                      '${energy.round()}점',
+                      'Energy',
+                      energy == null ? '--' : '${energy.round()} pts',
                       _scoreColor(energy),
+                      dim: energy == null,
                     ),
                   ),
                   Expanded(
                     child: _metric(
-                      '수면',
-                      '$sleep점',
+                      'Sleep',
+                      sleep == null ? '--' : '$sleep pts',
                       _scoreColor(sleep),
+                      dim: sleep == null,
                     ),
                   ),
                 ],
